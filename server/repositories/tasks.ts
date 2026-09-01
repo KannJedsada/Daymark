@@ -201,11 +201,12 @@ export function createTaskRepository(client: TaskRepositoryClient) {
     },
 
     async upsertProject(input: ProjectInput): Promise<Project> {
+      const jiraProjectKey = input.jiraProjectKey?.toUpperCase() ?? null
       const row = await execute(table(client, 'projects')
         .upsert({
           name: input.name,
-          jira_project_key: input.jiraProjectKey?.toUpperCase() ?? null,
-        }, { onConflict: 'name' })
+          jira_project_key: jiraProjectKey,
+        }, { onConflict: jiraProjectKey ? 'jira_project_key' : 'name' })
         .select()
         .single()) as ProjectRow
       return mapProject(row)

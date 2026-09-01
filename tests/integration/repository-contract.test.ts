@@ -105,6 +105,48 @@ describe('task repository contract', () => {
     expect(log).toMatchObject({ taskId: 'task-1', minutesSpent: 45 })
   })
 
+  it('reuses Jira projects by normalized Jira project key', async () => {
+    const query = createQuery({
+      data: {
+        id: 'project-1',
+        name: 'Renamed Operations',
+        jira_project_key: 'OPS',
+        created_at: '2026-09-01T08:00:00.000Z',
+        updated_at: '2026-09-01T08:00:00.000Z',
+      },
+      error: null,
+    })
+    const repository = createTaskRepository({ from: vi.fn(() => query) } as never)
+
+    await repository.upsertProject({ name: 'Renamed Operations', jiraProjectKey: 'ops' })
+
+    expect(query.upsert).toHaveBeenCalledWith({
+      name: 'Renamed Operations',
+      jira_project_key: 'OPS',
+    }, { onConflict: 'jira_project_key' })
+  })
+
+  it('reuses manual projects by case-insensitive name', async () => {
+    const query = createQuery({
+      data: {
+        id: 'project-1',
+        name: 'Operations',
+        jira_project_key: null,
+        created_at: '2026-09-01T08:00:00.000Z',
+        updated_at: '2026-09-01T08:00:00.000Z',
+      },
+      error: null,
+    })
+    const repository = createTaskRepository({ from: vi.fn(() => query) } as never)
+
+    await repository.upsertProject({ name: 'Operations' })
+
+    expect(query.upsert).toHaveBeenCalledWith({
+      name: 'Operations',
+      jira_project_key: null,
+    }, { onConflict: 'name' })
+  })
+
   it('keeps the migration invariants in the schema', () => {
     const migrationPath = resolve('supabase/migrations/202609010001_init_daymark.sql')
     const migration = readFileSync(migrationPath, 'utf8')
