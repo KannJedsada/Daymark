@@ -14,7 +14,12 @@ describe('task rules', () => {
   it('leaves completedAt unchanged for transitions between unfinished statuses', () => {
     expect(applyStatus('todo', 'in_progress', '2026-09-01T08:00:00.000Z')).toEqual({
       status: 'in_progress',
-      completedAt: undefined,
+    })
+  })
+
+  it('preserves completedAt when an already-done task receives an idempotent update', () => {
+    expect(applyStatus('done', 'done', '2026-09-01T08:00:00.000Z')).toEqual({
+      status: 'done',
     })
   })
 

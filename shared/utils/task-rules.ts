@@ -1,10 +1,19 @@
 import type { TaskStatus } from '../types/domain'
 
 export function applyStatus(previous: TaskStatus, next: TaskStatus, now: string) {
-  return {
-    status: next,
-    completedAt: next === 'done' ? now : previous === 'done' ? null : undefined,
+  if (previous === next) {
+    return { status: next }
   }
+
+  if (next === 'done') {
+    return { status: next, completedAt: now }
+  }
+
+  if (previous === 'done') {
+    return { status: next, completedAt: null }
+  }
+
+  return { status: next }
 }
 
 export function orderFocusedTasks<T extends { status: TaskStatus, updatedAt: string }>(tasks: readonly T[]): T[] {
