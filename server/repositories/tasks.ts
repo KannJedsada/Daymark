@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Project, TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/domain'
+import type { DashboardActivity, Project, TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/domain'
 
 type DatabaseError = { code?: string, message?: string }
-type QueryResult = { data: unknown; error: DatabaseError | null }
+type QueryResult = { data: unknown; error: DatabaseError | null; count?: number | null }
 
 interface QueryBuilder extends PromiseLike<QueryResult> {
   delete(): QueryBuilder
@@ -11,7 +11,8 @@ interface QueryBuilder extends PromiseLike<QueryResult> {
   insert(values: Record<string, unknown>): QueryBuilder
   maybeSingle(): QueryBuilder
   order(column: string, options?: { ascending?: boolean }): QueryBuilder
-  select(columns?: string): QueryBuilder
+  range(from: number, to: number): QueryBuilder
+  select(columns?: string, options?: { count?: 'exact' }): QueryBuilder
   single(): QueryBuilder
   update(values: Record<string, unknown>): QueryBuilder
   upsert(values: Record<string, unknown>, options?: Record<string, unknown>): QueryBuilder
@@ -55,6 +56,11 @@ export interface CreateWorkLogInput {
   minutesSpent?: number | null
 }
 
+export interface WorkLogDateFilters {
+  workedOn: string
+  projectId?: string
+}
+
 interface ProjectRow {
   id: string
   name: string
@@ -86,6 +92,10 @@ interface WorkLogRow {
   updated_at: string
 }
 
+interface DashboardActivityRow extends WorkLogRow {
+  task: TaskRow | TaskRow[]
+}
+
 const TASK_WITH_PROJECT_COLUMNS = `
   id,
   project_id,
@@ -105,6 +115,21 @@ const TASK_WITH_PROJECT_COLUMNS = `
   )
 `
 
+const DASHBOARD_ACTIVITY_COLUMNS = `
+  id,
+  task_id,
+  worked_on,
+  note,
+  minutes_spent,
+  created_at,
+  updated_at,
+  task:tasks!inner (
+    ${TASK_WITH_PROJECT_COLUMNS}
+  )
+`
+
+const DASHBOARD_PAGE_SIZE = 1_000
+
 function table(client: TaskRepositoryClient, name: string): QueryBuilder {
   return client.from(name) as unknown as QueryBuilder
 }
@@ -115,6 +140,14 @@ async function execute(query: QueryBuilder): Promise<unknown> {
     throw new TaskRepositoryError(error.code)
   }
   return data
+}
+
+async function executePage(query: QueryBuilder): Promise<{ data: unknown; count: number | null }> {
+  const { data, error, count = null } = await query
+  if (error) {
+    throw new TaskRepositoryError(error.code)
+  }
+  return { data, count }
 }
 
 export class TaskRepositoryError extends Error {
@@ -166,6 +199,18 @@ function mapWorkLog(row: WorkLogRow): WorkLog {
   }
 }
 
+function mapDashboardActivity(row: DashboardActivityRow): DashboardActivity {
+  const task = Array.isArray(row.task) ? row.task[0] : row.task
+  if (!task) {
+    throw new Error(`SUPABASE_INVALID_WORK_LOG_ROW: task missing for work log ${row.id}`)
+  }
+
+  return {
+    ...mapWorkLog(row),
+    task: mapTask(task),
+  }
+}
+
 function taskPayload(input: CreateTaskInput | UpdateTaskInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {}
   if (input.projectId !== undefined) payload.project_id = input.projectId
@@ -189,6 +234,27 @@ export function createTaskRepository(client: TaskRepositoryClient) {
       if (filters.date) query = query.eq('work_logs.worked_on', filters.date)
       const rows = await execute(query) as TaskRow[] | null
       return (rows ?? []).map(mapTask)
+    },
+
+    async listDashboardTasks(filters: Pick<TaskFilters, 'projectId'> = {}): Promise<TaskWithProject[]> {
+      const tasks: TaskWithProject[] = []
+
+      while (true) {
+        let query = table(client, 'tasks')
+          .select(TASK_WITH_PROJECT_COLUMNS, { count: 'exact' })
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: false })
+        if (filters.projectId) query = query.eq('project_id', filters.projectId)
+        query = query.range(tasks.length, tasks.length + DASHBOARD_PAGE_SIZE - 1)
+
+        const page = await executePage(query)
+        const rows = (page.data ?? []) as TaskRow[]
+        tasks.push(...rows.map(mapTask))
+        if (rows.length === 0 || (page.count !== null && tasks.length >= page.count)) break
+        if (page.count === null && rows.length < DASHBOARD_PAGE_SIZE) break
+      }
+
+      return tasks
     },
 
     async findTaskById(id: string): Promise<TaskWithProject | null> {
@@ -260,6 +326,28 @@ export function createTaskRepository(client: TaskRepositoryClient) {
         .order('worked_on', { ascending: false })
         .order('created_at', { ascending: false })) as WorkLogRow[] | null
       return (rows ?? []).map(mapWorkLog)
+    },
+
+    async listWorkLogsForDate(filters: WorkLogDateFilters): Promise<DashboardActivity[]> {
+      const workLogs: DashboardActivity[] = []
+
+      while (true) {
+        let query = table(client, 'work_logs')
+          .select(DASHBOARD_ACTIVITY_COLUMNS, { count: 'exact' })
+          .eq('worked_on', filters.workedOn)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+        if (filters.projectId) query = query.eq('task.project_id', filters.projectId)
+        query = query.range(workLogs.length, workLogs.length + DASHBOARD_PAGE_SIZE - 1)
+
+        const page = await executePage(query)
+        const rows = (page.data ?? []) as DashboardActivityRow[]
+        workLogs.push(...rows.map(mapDashboardActivity))
+        if (rows.length === 0 || (page.count !== null && workLogs.length >= page.count)) break
+        if (page.count === null && rows.length < DASHBOARD_PAGE_SIZE) break
+      }
+
+      return workLogs
     },
   }
 }

@@ -44,6 +44,11 @@ export const taskListQuerySchema = z.object({
   date: z.iso.date().optional(),
 })
 
+export const dashboardQuerySchema = z.object({
+  projectId: z.uuid().optional(),
+  date: z.iso.date().optional(),
+})
+
 export const taskIdSchema = z.uuid()
 
 export type JiraLookupInput = z.infer<typeof jiraLookupSchema>
@@ -52,3 +57,4 @@ export type PatchTaskInput = z.infer<typeof patchTaskSchema>
 export type CreateWorkLogInput = z.infer<typeof createWorkLogSchema>
 export type ProjectInput = z.infer<typeof projectInputSchema>
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>
+export type DashboardQuery = z.infer<typeof dashboardQuerySchema>

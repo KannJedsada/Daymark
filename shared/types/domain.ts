@@ -36,6 +36,10 @@ export type TaskWithProject = Task & {
   project: Project
 }
 
+export type DashboardActivity = WorkLog & {
+  task: TaskWithProject
+}
+
 export interface DashboardSummary {
   counts: {
     todo: number
@@ -43,5 +47,5 @@ export interface DashboardSummary {
     done: number
   }
   focusedTasks: TaskWithProject[]
-  todayActivity: WorkLog[]
+  todayActivity: DashboardActivity[]
 }
