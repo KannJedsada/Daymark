@@ -1,7 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=K2D:wght@500;600;700&display=swap');
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+:root {
+  --canvas: #f4f0e7;
+  --paper: #fffcf6;
+  --green: #183d32;
+  --green-soft: #dce7df;
+  --ink: #17211e;
+  --orange: #e86135;
+  --orange-strong: #a83b1c;
+  --orange-soft: #f7d8c8;
+  --muted: #68736f;
+  --line: #d8d3c8;
+  --focus-ring: #1d6e58;
+  --radius-sm: 0.75rem;
+  --radius-md: 1.25rem;
+  --radius-lg: 2rem;
+  --space-1: 0.5rem;
+  --space-2: 0.75rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+  --space-6: 3rem;
+  --shadow-paper: 0 1px 0 rgb(23 33 30 / 8%), 0 18px 50px rgb(24 61 50 / 8%);
+  --font-display: 'K2D', 'Leelawadee UI', sans-serif;
+  --font-body: 'IBM Plex Sans Thai', 'Leelawadee UI', Tahoma, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 html {
-  font-family: system-ui, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  scroll-behavior: smooth;
 }
 
 body {
+  min-width: 20rem;
+  min-height: 100vh;
   margin: 0;
+  background:
+    radial-gradient(circle at 90% 5%, rgb(232 97 53 / 8%), transparent 25rem),
+    linear-gradient(rgb(24 61 50 / 2%) 1px, transparent 1px),
+    var(--canvas);
+  background-size: auto, 100% 3rem, auto;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: var(--paper);
+  background: var(--green);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
