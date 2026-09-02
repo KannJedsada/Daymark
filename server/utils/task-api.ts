@@ -3,7 +3,7 @@ import { ZodError } from 'zod'
 
 import { createTaskRepository } from '../repositories/tasks'
 import { createTaskService, TaskServiceError, type TaskService } from '../services/tasks'
-import { createServerSupabaseClient } from './supabase'
+import { getDatabase } from './database'
 
 export interface TaskApiErrorBody {
   code: 'VALIDATION_ERROR' | 'TASK_NOT_FOUND' | 'DUPLICATE_JIRA' | 'STORAGE_ERROR'
@@ -11,7 +11,7 @@ export interface TaskApiErrorBody {
 }
 
 export function useTaskService(): TaskService {
-  return createTaskService(createTaskRepository(createServerSupabaseClient()))
+  return createTaskService(createTaskRepository(getDatabase()))
 }
 
 export function throwTaskApiError(error: unknown): never {

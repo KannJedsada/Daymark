@@ -30,6 +30,10 @@ async function requireTask(repository: TaskRepository, id: string): Promise<Task
   return task
 }
 
+function isUniqueViolation(code?: string) {
+  return code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE'
+}
+
 export function createTaskService(
   repository: TaskRepository,
   clock: () => string = () => new Date().toISOString(),
@@ -66,7 +70,7 @@ export function createTaskService(
         })
       }
       catch (error) {
-        if (!(error instanceof TaskRepositoryError) || error.databaseCode !== '23505') throw error
+        if (!(error instanceof TaskRepositoryError) || !isUniqueViolation(error.databaseCode)) throw error
         const concurrentTask = await repository.findTaskByJiraKey(jiraKey)
         if (!concurrentTask) throw error
         return { kind: 'duplicate', task: concurrentTask }

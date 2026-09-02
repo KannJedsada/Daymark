@@ -1,24 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from 'better-sqlite3'
+
 import type { DashboardActivity, Project, TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/domain'
-
-type DatabaseError = { code?: string, message?: string }
-type QueryResult = { data: unknown; error: DatabaseError | null; count?: number | null }
-
-interface QueryBuilder extends PromiseLike<QueryResult> {
-  delete(): QueryBuilder
-  eq(column: string, value: unknown): QueryBuilder
-  ilike(column: string, pattern: string): QueryBuilder
-  insert(values: Record<string, unknown>): QueryBuilder
-  maybeSingle(): QueryBuilder
-  order(column: string, options?: { ascending?: boolean }): QueryBuilder
-  range(from: number, to: number): QueryBuilder
-  select(columns?: string, options?: { count?: 'exact' }): QueryBuilder
-  single(): QueryBuilder
-  update(values: Record<string, unknown>): QueryBuilder
-  upsert(values: Record<string, unknown>, options?: Record<string, unknown>): QueryBuilder
-}
-
-export type TaskRepositoryClient = Pick<SupabaseClient, 'from'>
 
 export interface TaskFilters {
   status?: TaskStatus
@@ -79,7 +61,6 @@ interface TaskRow {
   created_at: string
   updated_at: string
   completed_at: string | null
-  project: ProjectRow | ProjectRow[]
 }
 
 interface WorkLogRow {
@@ -92,69 +73,21 @@ interface WorkLogRow {
   updated_at: string
 }
 
-interface DashboardActivityRow extends WorkLogRow {
-  task: TaskRow | TaskRow[]
-}
-
-const TASK_WITH_PROJECT_COLUMNS = `
-  id,
-  project_id,
-  jira_url,
-  jira_key,
-  summary,
-  status,
-  created_at,
-  updated_at,
-  completed_at,
-  project:projects (
-    id,
-    name,
-    jira_project_key,
-    created_at,
-    updated_at
-  )
-`
-
-const DASHBOARD_ACTIVITY_COLUMNS = `
-  id,
-  task_id,
-  worked_on,
-  note,
-  minutes_spent,
-  created_at,
-  updated_at,
-  task:tasks!inner (
-    ${TASK_WITH_PROJECT_COLUMNS}
-  )
-`
-
 const DASHBOARD_PAGE_SIZE = 1_000
-
-function table(client: TaskRepositoryClient, name: string): QueryBuilder {
-  return client.from(name) as unknown as QueryBuilder
-}
-
-async function execute(query: QueryBuilder): Promise<unknown> {
-  const { data, error } = await query
-  if (error) {
-    throw new TaskRepositoryError(error.code)
-  }
-  return data
-}
-
-async function executePage(query: QueryBuilder): Promise<{ data: unknown; count: number | null }> {
-  const { data, error, count = null } = await query
-  if (error) {
-    throw new TaskRepositoryError(error.code)
-  }
-  return { data, count }
-}
 
 export class TaskRepositoryError extends Error {
   constructor(public readonly databaseCode?: string) {
     super('TASK_REPOSITORY_QUERY_FAILED')
     this.name = 'TaskRepositoryError'
   }
+}
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function newId(): string {
+  return crypto.randomUUID()
 }
 
 function mapProject(row: ProjectRow): Project {
@@ -167,12 +100,7 @@ function mapProject(row: ProjectRow): Project {
   }
 }
 
-function mapTask(row: TaskRow): TaskWithProject {
-  const project = Array.isArray(row.project) ? row.project[0] : row.project
-  if (!project) {
-    throw new Error(`SUPABASE_INVALID_TASK_ROW: project missing for task ${row.id}`)
-  }
-
+function mapTask(row: TaskRow, project: Project): TaskWithProject {
   return {
     id: row.id,
     projectId: row.project_id,
@@ -183,7 +111,7 @@ function mapTask(row: TaskRow): TaskWithProject {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
-    project: mapProject(project),
+    project,
   }
 }
 
@@ -199,152 +127,299 @@ function mapWorkLog(row: WorkLogRow): WorkLog {
   }
 }
 
-function mapDashboardActivity(row: DashboardActivityRow): DashboardActivity {
-  const task = Array.isArray(row.task) ? row.task[0] : row.task
-  if (!task) {
-    throw new Error(`SUPABASE_INVALID_WORK_LOG_ROW: task missing for work log ${row.id}`)
-  }
-
-  return {
-    ...mapWorkLog(row),
-    task: mapTask(task),
-  }
+function getProject(db: Database, projectId: string): Project {
+  const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as ProjectRow | undefined
+  if (!row) throw new Error(`PROJECT_NOT_FOUND: ${projectId}`)
+  return mapProject(row)
 }
 
-function taskPayload(input: CreateTaskInput | UpdateTaskInput): Record<string, unknown> {
-  const payload: Record<string, unknown> = {}
-  if (input.projectId !== undefined) payload.project_id = input.projectId
-  if (input.jiraUrl !== undefined) payload.jira_url = input.jiraUrl
-  if (input.jiraKey !== undefined) payload.jira_key = input.jiraKey.toUpperCase()
-  if (input.summary !== undefined) payload.summary = input.summary
-  if (input.status !== undefined) payload.status = input.status
-  if (input.completedAt !== undefined) payload.completed_at = input.completedAt
-  return payload
+function getTaskWithProject(db: Database, taskId: string): TaskWithProject | null {
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as TaskRow | undefined
+  if (!row) return null
+  return mapTask(row, getProject(db, row.project_id))
 }
 
-export function createTaskRepository(client: TaskRepositoryClient) {
+function wrapDatabaseError(error: unknown): never {
+  if (error instanceof Error && 'code' in error) {
+    throw new TaskRepositoryError(String((error as { code?: string }).code))
+  }
+  throw error
+}
+
+export function createTaskRepository(db: Database) {
   return {
-    async listTasks(filters: TaskFilters = {}): Promise<TaskWithProject[]> {
-      let query = table(client, 'tasks')
-        .select(filters.date ? `${TASK_WITH_PROJECT_COLUMNS}, work_logs!inner(worked_on)` : TASK_WITH_PROJECT_COLUMNS)
-        .order('updated_at', { ascending: false })
-      if (filters.status) query = query.eq('status', filters.status)
-      if (filters.projectId) query = query.eq('project_id', filters.projectId)
-      if (filters.query) query = query.ilike('summary', `%${filters.query}%`)
-      if (filters.date) query = query.eq('work_logs.worked_on', filters.date)
-      const rows = await execute(query) as TaskRow[] | null
-      return (rows ?? []).map(mapTask)
+    listTasks(filters: TaskFilters = {}): TaskWithProject[] {
+      const clauses: string[] = []
+      const params: unknown[] = []
+
+      if (filters.status) {
+        clauses.push('t.status = ?')
+        params.push(filters.status)
+      }
+      if (filters.projectId) {
+        clauses.push('t.project_id = ?')
+        params.push(filters.projectId)
+      }
+      if (filters.query) {
+        clauses.push('t.summary LIKE ?')
+        params.push(`%${filters.query}%`)
+      }
+      if (filters.date) {
+        clauses.push('EXISTS (SELECT 1 FROM work_logs wl WHERE wl.task_id = t.id AND wl.worked_on = ?)')
+        params.push(filters.date)
+      }
+
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+      const rows = db.prepare(`
+        SELECT t.*
+        FROM tasks t
+        ${where}
+        ORDER BY t.updated_at DESC
+      `).all(...params) as TaskRow[]
+
+      return rows.map(row => mapTask(row, getProject(db, row.project_id)))
     },
 
-    async listDashboardTasks(filters: Pick<TaskFilters, 'projectId'> = {}): Promise<TaskWithProject[]> {
+    listDashboardTasks(filters: Pick<TaskFilters, 'projectId'> = {}): TaskWithProject[] {
       const tasks: TaskWithProject[] = []
+      const params: unknown[] = []
+      let where = ''
+      if (filters.projectId) {
+        where = 'WHERE project_id = ?'
+        params.push(filters.projectId)
+      }
 
       while (true) {
-        let query = table(client, 'tasks')
-          .select(TASK_WITH_PROJECT_COLUMNS, { count: 'exact' })
-          .order('updated_at', { ascending: false })
-          .order('id', { ascending: false })
-        if (filters.projectId) query = query.eq('project_id', filters.projectId)
-        query = query.range(tasks.length, tasks.length + DASHBOARD_PAGE_SIZE - 1)
+        const offset = tasks.length
+        const rows = db.prepare(`
+          SELECT *
+          FROM tasks
+          ${where}
+          ORDER BY updated_at DESC, id DESC
+          LIMIT ? OFFSET ?
+        `).all(...params, DASHBOARD_PAGE_SIZE, offset) as TaskRow[]
 
-        const page = await executePage(query)
-        const rows = (page.data ?? []) as TaskRow[]
-        tasks.push(...rows.map(mapTask))
-        if (rows.length === 0 || (page.count !== null && tasks.length >= page.count)) break
-        if (page.count === null && rows.length < DASHBOARD_PAGE_SIZE) break
+        if (rows.length === 0) break
+        tasks.push(...rows.map(row => mapTask(row, getProject(db, row.project_id))))
+        if (rows.length < DASHBOARD_PAGE_SIZE) break
       }
 
       return tasks
     },
 
-    async findTaskById(id: string): Promise<TaskWithProject | null> {
-      const row = await execute(table(client, 'tasks')
-        .select(TASK_WITH_PROJECT_COLUMNS)
-        .eq('id', id)
-        .maybeSingle()) as TaskRow | null
-      return row ? mapTask(row) : null
+    findTaskById(id: string): TaskWithProject | null {
+      return getTaskWithProject(db, id)
     },
 
-    async findTaskByJiraKey(key: string): Promise<TaskWithProject | null> {
-      const row = await execute(table(client, 'tasks')
-        .select(TASK_WITH_PROJECT_COLUMNS)
-        .eq('jira_key', key.toUpperCase())
-        .maybeSingle()) as TaskRow | null
-      return row ? mapTask(row) : null
+    findTaskByJiraKey(key: string): TaskWithProject | null {
+      const row = db.prepare('SELECT * FROM tasks WHERE jira_key = ?').get(key.toUpperCase()) as TaskRow | undefined
+      if (!row) return null
+      return mapTask(row, getProject(db, row.project_id))
     },
 
-    async upsertProject(input: ProjectInput): Promise<Project> {
+    upsertProject(input: ProjectInput): Project {
+      const timestamp = nowIso()
       const jiraProjectKey = input.jiraProjectKey?.toUpperCase() ?? null
-      const row = await execute(table(client, 'projects')
-        .upsert({
-          name: input.name,
-          jira_project_key: jiraProjectKey,
-        }, { onConflict: jiraProjectKey ? 'jira_project_key' : 'name' })
-        .select()
-        .single()) as ProjectRow
+
+      if (jiraProjectKey) {
+        const existing = db.prepare('SELECT * FROM projects WHERE jira_project_key = ?').get(jiraProjectKey) as ProjectRow | undefined
+        if (existing) {
+          db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(input.name, timestamp, existing.id)
+          return mapProject({ ...existing, name: input.name, updated_at: timestamp })
+        }
+      }
+
+      const existingByName = db.prepare('SELECT * FROM projects WHERE name = ? COLLATE NOCASE').get(input.name) as ProjectRow | undefined
+      if (existingByName) {
+        if (jiraProjectKey && !existingByName.jira_project_key) {
+          db.prepare('UPDATE projects SET jira_project_key = ?, updated_at = ? WHERE id = ?')
+            .run(jiraProjectKey, timestamp, existingByName.id)
+          return mapProject({ ...existingByName, jira_project_key: jiraProjectKey, updated_at: timestamp })
+        }
+        return mapProject(existingByName)
+      }
+
+      const row: ProjectRow = {
+        id: newId(),
+        name: input.name,
+        jira_project_key: jiraProjectKey,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }
+      db.prepare(`
+        INSERT INTO projects (id, name, jira_project_key, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(row.id, row.name, row.jira_project_key, row.created_at, row.updated_at)
       return mapProject(row)
     },
 
-    async createTask(input: CreateTaskInput): Promise<TaskWithProject> {
-      const row = await execute(table(client, 'tasks')
-        .insert(taskPayload(input))
-        .select(TASK_WITH_PROJECT_COLUMNS)
-        .single()) as TaskRow
-      return mapTask(row)
+    createTask(input: CreateTaskInput): TaskWithProject {
+      const timestamp = nowIso()
+      const row: TaskRow = {
+        id: newId(),
+        project_id: input.projectId,
+        jira_url: input.jiraUrl,
+        jira_key: input.jiraKey.toUpperCase(),
+        summary: input.summary,
+        status: input.status ?? 'todo',
+        created_at: timestamp,
+        updated_at: timestamp,
+        completed_at: input.completedAt ?? null,
+      }
+
+      try {
+        db.prepare(`
+          INSERT INTO tasks (
+            id, project_id, jira_url, jira_key, summary, status, created_at, updated_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          row.id,
+          row.project_id,
+          row.jira_url,
+          row.jira_key,
+          row.summary,
+          row.status,
+          row.created_at,
+          row.updated_at,
+          row.completed_at,
+        )
+      }
+      catch (error) {
+        wrapDatabaseError(error)
+      }
+
+      return mapTask(row, getProject(db, row.project_id))
     },
 
-    async updateTask(id: string, patch: UpdateTaskInput): Promise<TaskWithProject> {
-      const row = await execute(table(client, 'tasks')
-        .update(taskPayload(patch))
-        .eq('id', id)
-        .select(TASK_WITH_PROJECT_COLUMNS)
-        .single()) as TaskRow
-      return mapTask(row)
+    updateTask(id: string, patch: UpdateTaskInput): TaskWithProject {
+      const current = getTaskWithProject(db, id)
+      if (!current) throw new TaskRepositoryError('TASK_NOT_FOUND')
+
+      const next: TaskRow = {
+        id: current.id,
+        project_id: patch.projectId ?? current.projectId,
+        jira_url: patch.jiraUrl ?? current.jiraUrl,
+        jira_key: (patch.jiraKey ?? current.jiraKey).toUpperCase(),
+        summary: patch.summary ?? current.summary,
+        status: patch.status ?? current.status,
+        created_at: current.createdAt,
+        updated_at: nowIso(),
+        completed_at: patch.completedAt !== undefined ? patch.completedAt : current.completedAt,
+      }
+
+      try {
+        db.prepare(`
+          UPDATE tasks
+          SET project_id = ?, jira_url = ?, jira_key = ?, summary = ?, status = ?, updated_at = ?, completed_at = ?
+          WHERE id = ?
+        `).run(
+          next.project_id,
+          next.jira_url,
+          next.jira_key,
+          next.summary,
+          next.status,
+          next.updated_at,
+          next.completed_at,
+          id,
+        )
+      }
+      catch (error) {
+        wrapDatabaseError(error)
+      }
+
+      return mapTask(next, getProject(db, next.project_id))
     },
 
-    async deleteTask(id: string): Promise<void> {
-      await execute(table(client, 'tasks').delete().eq('id', id))
+    deleteTask(id: string): void {
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
     },
 
-    async createWorkLog(taskId: string, input: CreateWorkLogInput): Promise<WorkLog> {
-      const row = await execute(table(client, 'work_logs')
-        .insert({
-          task_id: taskId,
-          worked_on: input.workedOn,
-          note: input.note,
-          minutes_spent: input.minutesSpent ?? null,
-        })
-        .select()
-        .single()) as WorkLogRow
+    createWorkLog(taskId: string, input: CreateWorkLogInput): WorkLog {
+      const timestamp = nowIso()
+      const row: WorkLogRow = {
+        id: newId(),
+        task_id: taskId,
+        worked_on: input.workedOn,
+        note: input.note,
+        minutes_spent: input.minutesSpent ?? null,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }
+
+      db.prepare(`
+        INSERT INTO work_logs (id, task_id, worked_on, note, minutes_spent, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        row.id,
+        row.task_id,
+        row.worked_on,
+        row.note,
+        row.minutes_spent,
+        row.created_at,
+        row.updated_at,
+      )
+
       return mapWorkLog(row)
     },
 
-    async listWorkLogs(taskId: string): Promise<WorkLog[]> {
-      const rows = await execute(table(client, 'work_logs')
-        .select()
-        .eq('task_id', taskId)
-        .order('worked_on', { ascending: false })
-        .order('created_at', { ascending: false })) as WorkLogRow[] | null
-      return (rows ?? []).map(mapWorkLog)
+    listWorkLogs(taskId: string): WorkLog[] {
+      const rows = db.prepare(`
+        SELECT *
+        FROM work_logs
+        WHERE task_id = ?
+        ORDER BY worked_on DESC, created_at DESC
+      `).all(taskId) as WorkLogRow[]
+      return rows.map(mapWorkLog)
     },
 
-    async listWorkLogsForDate(filters: WorkLogDateFilters): Promise<DashboardActivity[]> {
+    listWorkLogsForDate(filters: WorkLogDateFilters): DashboardActivity[] {
       const workLogs: DashboardActivity[] = []
+      const params: unknown[] = [filters.workedOn]
+      let projectClause = ''
+      if (filters.projectId) {
+        projectClause = 'AND t.project_id = ?'
+        params.push(filters.projectId)
+      }
 
       while (true) {
-        let query = table(client, 'work_logs')
-          .select(DASHBOARD_ACTIVITY_COLUMNS, { count: 'exact' })
-          .eq('worked_on', filters.workedOn)
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-        if (filters.projectId) query = query.eq('task.project_id', filters.projectId)
-        query = query.range(workLogs.length, workLogs.length + DASHBOARD_PAGE_SIZE - 1)
+        const offset = workLogs.length
+        const rows = db.prepare(`
+          SELECT wl.*, t.id AS task_id_ref, t.project_id, t.jira_url, t.jira_key, t.summary, t.status,
+                 t.created_at AS task_created_at, t.updated_at AS task_updated_at, t.completed_at
+          FROM work_logs wl
+          INNER JOIN tasks t ON t.id = wl.task_id
+          WHERE wl.worked_on = ? ${projectClause}
+          ORDER BY wl.created_at DESC, wl.id DESC
+          LIMIT ? OFFSET ?
+        `).all(...params, DASHBOARD_PAGE_SIZE, offset) as Array<WorkLogRow & {
+          project_id: string
+          jira_url: string
+          jira_key: string
+          summary: string
+          status: TaskStatus
+          task_created_at: string
+          task_updated_at: string
+          completed_at: string | null
+        }>
 
-        const page = await executePage(query)
-        const rows = (page.data ?? []) as DashboardActivityRow[]
-        workLogs.push(...rows.map(mapDashboardActivity))
-        if (rows.length === 0 || (page.count !== null && workLogs.length >= page.count)) break
-        if (page.count === null && rows.length < DASHBOARD_PAGE_SIZE) break
+        if (rows.length === 0) break
+
+        workLogs.push(...rows.map(row => ({
+          ...mapWorkLog(row),
+          task: mapTask({
+            id: row.task_id,
+            project_id: row.project_id,
+            jira_url: row.jira_url,
+            jira_key: row.jira_key,
+            summary: row.summary,
+            status: row.status,
+            created_at: row.task_created_at,
+            updated_at: row.task_updated_at,
+            completed_at: row.completed_at,
+          }, getProject(db, row.project_id)),
+        })))
+
+        if (rows.length < DASHBOARD_PAGE_SIZE) break
       }
 
       return workLogs

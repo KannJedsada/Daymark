@@ -10,6 +10,10 @@ const navigation = [
 function requestAddTask() {
   addTaskRequested.value = true
 }
+
+function handleCreated() {
+  addTaskRequested.value = false
+}
 </script>
 
 <template>
@@ -45,12 +49,9 @@ function requestAddTask() {
         </button>
       </div>
 
-      <div v-if="addTaskRequested" class="trigger-notice" role="status">
-        <span>รับคำสั่งเพิ่มงานแล้ว</span>
-        <span class="trigger-contract">ฟอร์มเพิ่มงานกำลังจะพร้อมใช้งาน</span>
-        <button type="button" aria-label="ปิดข้อความเพิ่มงาน" @click="addTaskRequested = false">ปิด</button>
-      </div>
     </header>
+
+    <TasksAddTaskModal v-model:open="addTaskRequested" @created="handleCreated" />
 
     <main id="main-content" tabindex="-1">
       <slot />
@@ -72,15 +73,10 @@ function requestAddTask() {
 .nav-english { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; opacity: .72; }
 .add-task-button { justify-self: end; display: inline-flex; min-height: 2.85rem; align-items: center; gap: .4rem; padding: .65rem 1.05rem; color: white; background: var(--orange-strong); border: 0; border-radius: 999px; box-shadow: 0 8px 20px rgb(168 59 28 / 22%); cursor: pointer; font-weight: 600; transition: transform 160ms ease, box-shadow 160ms ease; }
 .add-task-button:hover { transform: translateY(-2px); box-shadow: 0 11px 24px rgb(232 97 53 / 28%); }
-.trigger-notice { display: flex; align-items: center; justify-content: center; gap: .75rem; min-height: 2.5rem; padding: .35rem 1rem; color: var(--paper); background: var(--green); font-size: .85rem; }
-.trigger-contract { color: #bad0c8; }
-.trigger-notice button { padding: .2rem .6rem; color: inherit; background: transparent; border: 1px solid rgb(255 255 255 / 35%); border-radius: 999px; cursor: pointer; }
 @media (max-width: 46rem) {
   .header-inner { grid-template-columns: 1fr auto; min-height: 4.5rem; }
   nav { grid-column: 1 / -1; grid-row: 2; padding-bottom: .55rem; }
   .nav-list { justify-content: center; }
   .nav-english { display: none; }
-  .trigger-notice { align-items: flex-start; flex-wrap: wrap; }
-  .trigger-contract { display: none; }
 }
 </style>

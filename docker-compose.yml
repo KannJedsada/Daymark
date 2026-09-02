@@ -1,0 +1,13 @@
+services:
+  daymark:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NUXT_DATABASE_PATH: /data/daymark.sqlite
+    volumes:
+      - daymark-data:/data
+    restart: unless-stopped
+
+volumes:
+  daymark-data:

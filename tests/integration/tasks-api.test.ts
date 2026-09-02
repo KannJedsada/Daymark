@@ -97,7 +97,7 @@ describe('task service workflow', () => {
       .mockResolvedValueOnce(existing)
     const repo = repository({
       findTaskByJiraKey,
-      createTask: vi.fn(async () => { throw new TaskRepositoryError('23505') }),
+      createTask: vi.fn(async () => { throw new TaskRepositoryError('SQLITE_CONSTRAINT_UNIQUE') }),
     })
     const service = createTaskService(repo as never, () => NOW)
 

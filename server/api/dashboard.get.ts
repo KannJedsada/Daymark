@@ -4,7 +4,7 @@ import { ZodError } from 'zod'
 import { dashboardQuerySchema } from '../../shared/schemas/task'
 import { createTaskRepository } from '../repositories/tasks'
 import { createDashboardService, type DashboardService } from '../services/dashboard'
-import { createServerSupabaseClient } from '../utils/supabase'
+import { getDatabase } from '../utils/database'
 
 interface Dependencies {
   service: () => DashboardService
@@ -12,7 +12,7 @@ interface Dependencies {
 }
 
 export function useDashboardService(): DashboardService {
-  return createDashboardService(createTaskRepository(createServerSupabaseClient()))
+  return createDashboardService(createTaskRepository(getDatabase()))
 }
 
 export function createDashboardHandler(dependencies: Dependencies) {

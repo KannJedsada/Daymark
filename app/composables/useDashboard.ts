@@ -23,7 +23,7 @@ export function useDashboard(filters: Ref<DashboardFilters>) {
   }))
 
   const request = useFetch<DashboardSummary>('/api/dashboard', {
-    key: 'daily-focus-dashboard',
+    key: 'dashboard',
     query,
     lazy: true,
     default: emptyDashboard,
