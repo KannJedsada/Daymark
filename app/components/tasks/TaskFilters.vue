@@ -33,12 +33,11 @@ const statusOptions: Array<{ value: string, label: string }> = [
 
     <label>
       <span>โปรเจกต์</span>
-      <input
+      <ProjectsProjectSelect
         v-model="model.projectId"
-        name="projectId"
-        placeholder="Project ID"
-        autocomplete="off"
-      >
+        allow-empty
+        empty-label="ทุกโปรเจกต์"
+      />
     </label>
 
     <label class="query-field">

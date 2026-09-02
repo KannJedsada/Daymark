@@ -11,8 +11,19 @@ export const taskCreationFormSchema = z.object({
   jiraUrl: z.url('กรุณากรอกลิงก์ Jira ที่ถูกต้อง'),
   jiraKey: requiredText('รหัส Jira', 100),
   summary: requiredText('ชื่องาน', 300),
-  projectName: requiredText('ชื่อโปรเจกต์', 300),
+  projectId: z.string().trim(),
+  projectName: z.string().trim().max(300, 'ชื่อโปรเจกต์ยาวเกินไป'),
   jiraProjectKey: z.string().trim().max(100, 'รหัสโปรเจกต์ยาวเกินไป'),
+}).superRefine((data, ctx) => {
+  if (z.uuid().safeParse(data.projectId).success) return
+
+  if (!data.projectName.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'กรุณากรอกชื่อโปรเจกต์',
+      path: ['projectName'],
+    })
+  }
 })
 
 const jiraIssueSchema = z.object({
@@ -49,7 +60,14 @@ interface FetchFailure {
 }
 
 function createEmptyForm(): TaskCreationForm {
-  return { jiraUrl: '', jiraKey: '', summary: '', projectName: '', jiraProjectKey: '' }
+  return {
+    jiraUrl: '',
+    jiraKey: '',
+    summary: '',
+    projectId: '__new__',
+    projectName: '',
+    jiraProjectKey: '',
+  }
 }
 
 function failureDetails(error: unknown) {
@@ -121,19 +139,28 @@ export function useTaskCreation(onCreated: (task: TaskWithProject) => void) {
 
     creationState.value = { status: 'submitting' }
     try {
+      const body = z.uuid().safeParse(parsed.data.projectId).success
+        ? {
+            jiraUrl: parsed.data.jiraUrl,
+            jiraKey: parsed.data.jiraKey,
+            summary: parsed.data.summary,
+            projectId: parsed.data.projectId,
+          }
+        : {
+            jiraUrl: parsed.data.jiraUrl,
+            jiraKey: parsed.data.jiraKey,
+            summary: parsed.data.summary,
+            project: {
+              name: parsed.data.projectName,
+              jiraProjectKey: parsed.data.jiraProjectKey || undefined,
+            },
+          }
+
       const task = await $fetch<TaskWithProject>('/api/tasks', {
         method: 'POST',
-        body: {
-          jiraUrl: parsed.data.jiraUrl,
-          jiraKey: parsed.data.jiraKey,
-          summary: parsed.data.summary,
-          project: {
-            name: parsed.data.projectName,
-            jiraProjectKey: parsed.data.jiraProjectKey || undefined,
-          },
-        },
+        body,
       })
-      await refreshNuxtData(['dashboard', 'tasks'])
+      await refreshNuxtData(['dashboard', 'tasks', 'projects', 'weekly-report'])
       reset()
       onCreated(task)
     }

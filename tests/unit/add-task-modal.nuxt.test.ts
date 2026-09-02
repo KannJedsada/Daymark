@@ -1,6 +1,6 @@
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AddTaskModal from '../../app/components/tasks/AddTaskModal.vue'
 
@@ -57,9 +57,22 @@ async function submitForm(wrapper: Awaited<ReturnType<typeof mountModal>>) {
   await flushPromises()
 }
 
+function installDefaultFetchMock() {
+  fetchMock.mockImplementation(async (url: string, options?: { method?: string }) => {
+    if (url === '/api/projects') return []
+    if (url === '/api/jira/lookup') return issue
+    if (url === '/api/tasks' && options?.method === 'POST') return createdTask
+    throw new Error(`Unhandled fetch: ${url}`)
+  })
+}
+
 afterEach(() => {
   fetchMock.mockReset()
   refreshNuxtDataMock.mockClear()
+})
+
+beforeEach(() => {
+  installDefaultFetchMock()
 })
 
 describe('AddTaskModal', () => {
@@ -71,7 +84,6 @@ describe('AddTaskModal', () => {
   })
 
   it('fills editable Jira fields after a successful lookup', async () => {
-    fetchMock.mockResolvedValueOnce(issue)
     const wrapper = await mountModal()
 
     await lookup(wrapper)
@@ -83,9 +95,15 @@ describe('AddTaskModal', () => {
   }, 15_000)
 
   it('preserves the Jira URL and reveals manual fields after a safe lookup failure', async () => {
-    fetchMock.mockRejectedValueOnce({
-      statusCode: 422,
-      data: { code: 'JIRA_INVALID_URL', message: 'Enter a valid Jira issue URL.' },
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/projects') return []
+      if (url === '/api/jira/lookup') {
+        throw {
+          statusCode: 422,
+          data: { code: 'JIRA_INVALID_URL', message: 'Enter a valid Jira issue URL.' },
+        }
+      }
+      throw new Error(`Unhandled fetch: ${url}`)
     })
     const wrapper = await mountModal()
 
@@ -98,7 +116,18 @@ describe('AddTaskModal', () => {
 
   it('guards lookup and creation against repeated submissions', async () => {
     let resolveLookup!: (value: typeof issue) => void
-    fetchMock.mockImplementationOnce(() => new Promise(resolve => { resolveLookup = resolve }))
+    fetchMock.mockImplementation(async (url: string, options?: { method?: string }) => {
+      if (url === '/api/projects') return []
+      if (url === '/api/jira/lookup') {
+        return new Promise(resolve => { resolveLookup = resolve })
+      }
+      if (url === '/api/tasks' && options?.method === 'POST') {
+        return new Promise(resolve => { resolveCreate = resolve })
+      }
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+
+    let resolveCreate!: (value: typeof createdTask) => void
     const wrapper = await mountModal()
 
     await wrapper.get('[name="jiraUrl"]').setValue(issue.jiraUrl)
@@ -112,24 +141,27 @@ describe('AddTaskModal', () => {
     resolveLookup(issue)
     await flushPromises()
 
-    let resolveCreate!: (value: typeof createdTask) => void
-    fetchMock.mockImplementationOnce(() => new Promise(resolve => { resolveCreate = resolve }))
     await submitForm(wrapper)
     await submitForm(wrapper)
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(wrapper.get('[data-testid="create-task"]').attributes('disabled')).toBeDefined()
     resolveCreate(createdTask)
     await flushPromises()
   })
 
   it('shows a link to an existing task on duplicate 409', async () => {
-    fetchMock
-      .mockResolvedValueOnce(issue)
-      .mockRejectedValueOnce({
-        statusCode: 409,
-        data: { code: 'DUPLICATE_JIRA', task: { id: createdTask.id } },
-      })
+    fetchMock.mockImplementation(async (url: string, options?: { method?: string }) => {
+      if (url === '/api/projects') return []
+      if (url === '/api/jira/lookup') return issue
+      if (url === '/api/tasks' && options?.method === 'POST') {
+        throw {
+          statusCode: 409,
+          data: { code: 'DUPLICATE_JIRA', task: { id: createdTask.id } },
+        }
+      }
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
     const wrapper = await mountModal()
 
     await lookup(wrapper)
@@ -141,7 +173,6 @@ describe('AddTaskModal', () => {
   })
 
   it('closes, resets, emits, and refreshes dashboard/task data after creation', async () => {
-    fetchMock.mockResolvedValueOnce(issue).mockResolvedValueOnce(createdTask)
     const wrapper = await mountModal()
 
     await lookup(wrapper)
@@ -149,7 +180,7 @@ describe('AddTaskModal', () => {
 
     expect(wrapper.emitted('created')?.[0]).toEqual([createdTask])
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
-    expect(refreshNuxtDataMock).toHaveBeenCalledWith(['dashboard', 'tasks'])
+    expect(refreshNuxtDataMock).toHaveBeenCalledWith(['dashboard', 'tasks', 'projects', 'weekly-report'])
 
     await wrapper.setProps({ open: false })
     await wrapper.setProps({ open: true })

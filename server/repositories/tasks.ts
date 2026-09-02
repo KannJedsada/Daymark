@@ -43,6 +43,12 @@ export interface WorkLogDateFilters {
   projectId?: string
 }
 
+export interface WorkLogRangeFilters {
+  from: string
+  to: string
+  projectId?: string
+}
+
 interface ProjectRow {
   id: string
   name: string
@@ -215,6 +221,16 @@ export function createTaskRepository(db: Database) {
       const row = db.prepare('SELECT * FROM tasks WHERE jira_key = ?').get(key.toUpperCase()) as TaskRow | undefined
       if (!row) return null
       return mapTask(row, getProject(db, row.project_id))
+    },
+
+    listProjects(): Project[] {
+      const rows = db.prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE').all() as ProjectRow[]
+      return rows.map(mapProject)
+    },
+
+    findProjectById(id: string): Project | null {
+      const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined
+      return row ? mapProject(row) : null
     },
 
     upsertProject(input: ProjectInput): Project {
@@ -390,6 +406,59 @@ export function createTaskRepository(db: Database) {
           INNER JOIN tasks t ON t.id = wl.task_id
           WHERE wl.worked_on = ? ${projectClause}
           ORDER BY wl.created_at DESC, wl.id DESC
+          LIMIT ? OFFSET ?
+        `).all(...params, DASHBOARD_PAGE_SIZE, offset) as Array<WorkLogRow & {
+          project_id: string
+          jira_url: string
+          jira_key: string
+          summary: string
+          status: TaskStatus
+          task_created_at: string
+          task_updated_at: string
+          completed_at: string | null
+        }>
+
+        if (rows.length === 0) break
+
+        workLogs.push(...rows.map(row => ({
+          ...mapWorkLog(row),
+          task: mapTask({
+            id: row.task_id,
+            project_id: row.project_id,
+            jira_url: row.jira_url,
+            jira_key: row.jira_key,
+            summary: row.summary,
+            status: row.status,
+            created_at: row.task_created_at,
+            updated_at: row.task_updated_at,
+            completed_at: row.completed_at,
+          }, getProject(db, row.project_id)),
+        })))
+
+        if (rows.length < DASHBOARD_PAGE_SIZE) break
+      }
+
+      return workLogs
+    },
+
+    listWorkLogsForRange(filters: WorkLogRangeFilters): DashboardActivity[] {
+      const workLogs: DashboardActivity[] = []
+      const params: unknown[] = [filters.from, filters.to]
+      let projectClause = ''
+      if (filters.projectId) {
+        projectClause = 'AND t.project_id = ?'
+        params.push(filters.projectId)
+      }
+
+      while (true) {
+        const offset = workLogs.length
+        const rows = db.prepare(`
+          SELECT wl.*, t.id AS task_id_ref, t.project_id, t.jira_url, t.jira_key, t.summary, t.status,
+                 t.created_at AS task_created_at, t.updated_at AS task_updated_at, t.completed_at
+          FROM work_logs wl
+          INNER JOIN tasks t ON t.id = wl.task_id
+          WHERE wl.worked_on >= ? AND wl.worked_on <= ? ${projectClause}
+          ORDER BY wl.worked_on DESC, wl.created_at DESC, wl.id DESC
           LIMIT ? OFFSET ?
         `).all(...params, DASHBOARD_PAGE_SIZE, offset) as Array<WorkLogRow & {
           project_id: string

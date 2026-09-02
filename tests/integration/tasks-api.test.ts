@@ -51,6 +51,8 @@ function repository(overrides: Record<string, unknown> = {}) {
       minutesSpent: 45, createdAt: NOW, updatedAt: NOW,
     })),
     listWorkLogs: vi.fn(async () => []),
+    listProjects: vi.fn(async () => [project]),
+    findProjectById: vi.fn(async () => project),
     ...overrides,
   }
 }
@@ -72,6 +74,25 @@ describe('task service workflow', () => {
     expect(repo.upsertProject).toHaveBeenCalledWith({ name: 'Operations', jiraProjectKey: 'OPS' })
     expect(repo.createTask).toHaveBeenCalledWith(expect.objectContaining({
       projectId: 'project-1', jiraKey: 'OPS-421', status: 'todo', completedAt: null,
+    }))
+  })
+
+  it('uses an existing project when projectId is provided', async () => {
+    const repo = repository()
+    const service = createTaskService(repo as never, () => NOW)
+
+    await service.createTask({
+      jiraUrl: 'https://acme.atlassian.net/browse/OPS-422',
+      jiraKey: 'OPS-422',
+      summary: 'Another task',
+      projectId: project.id,
+    })
+
+    expect(repo.findProjectById).toHaveBeenCalledWith(project.id)
+    expect(repo.upsertProject).not.toHaveBeenCalled()
+    expect(repo.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: project.id,
+      jiraKey: 'OPS-422',
     }))
   })
 

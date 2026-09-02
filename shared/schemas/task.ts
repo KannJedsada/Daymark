@@ -17,7 +17,11 @@ export const createTaskSchema = z.object({
   jiraUrl: z.url(),
   jiraKey: trimmedRequiredString(100),
   summary: trimmedRequiredString(300),
-  project: projectInputSchema,
+  project: projectInputSchema.optional(),
+  projectId: z.uuid().optional(),
+}).refine(input => input.projectId || input.project, {
+  message: 'Project is required',
+  path: ['project'],
 })
 
 export const patchTaskSchema = z.object({
@@ -49,6 +53,16 @@ export const dashboardQuerySchema = z.object({
   date: z.iso.date().optional(),
 })
 
+export const createProjectSchema = z.object({
+  name: trimmedRequiredString(300),
+  jiraProjectKey: trimmedRequiredString(100).optional(),
+})
+
+export const weeklyReportQuerySchema = z.object({
+  week: z.iso.date().optional(),
+  projectId: z.uuid().optional(),
+})
+
 export const taskIdSchema = z.uuid()
 
 export type JiraLookupInput = z.infer<typeof jiraLookupSchema>
@@ -58,3 +72,5 @@ export type CreateWorkLogInput = z.infer<typeof createWorkLogSchema>
 export type ProjectInput = z.infer<typeof projectInputSchema>
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>
 export type DashboardQuery = z.infer<typeof dashboardQuerySchema>
+export type CreateProjectBody = z.infer<typeof createProjectSchema>
+export type WeeklyReportQuery = z.infer<typeof weeklyReportQuerySchema>

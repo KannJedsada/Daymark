@@ -5,6 +5,8 @@ const addTaskRequested = useState('daymark:add-task-requested', () => false)
 const navigation = [
   { label: 'Dashboard', labelThai: 'ภาพรวม', to: '/' },
   { label: 'Tasks', labelThai: 'งานทั้งหมด', to: '/tasks' },
+  { label: 'Projects', labelThai: 'โปรเจกต์', to: '/projects' },
+  { label: 'Weekly', labelThai: 'รายสัปดาห์', to: '/reports/weekly' },
 ] as const
 
 function requestAddTask() {

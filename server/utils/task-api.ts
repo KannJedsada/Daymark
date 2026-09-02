@@ -26,6 +26,10 @@ export function throwTaskApiError(error: unknown): never {
     statusCode = 404
     body = { code: 'TASK_NOT_FOUND', message: 'Task not found.' }
   }
+  else if (error instanceof TaskServiceError && error.code === 'PROJECT_NOT_FOUND') {
+    statusCode = 422
+    body = { code: 'VALIDATION_ERROR', message: 'The request is invalid.' }
+  }
 
   throw createError({
     statusCode,

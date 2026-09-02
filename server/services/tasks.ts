@@ -7,7 +7,7 @@ import type { TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/do
 import { applyStatus } from '../../shared/utils/task-rules'
 import { TaskRepositoryError, type TaskFilters, type TaskRepository } from '../repositories/tasks'
 
-export type TaskServiceErrorCode = 'TASK_NOT_FOUND'
+export type TaskServiceErrorCode = 'TASK_NOT_FOUND' | 'PROJECT_NOT_FOUND'
 
 export class TaskServiceError extends Error {
   constructor(public readonly code: TaskServiceErrorCode) {
@@ -34,6 +34,21 @@ function isUniqueViolation(code?: string) {
   return code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE'
 }
 
+async function resolveProject(repository: TaskRepository, input: ValidatedCreateTaskInput) {
+  if (input.projectId) {
+    const project = await repository.findProjectById(input.projectId)
+    if (!project) throw new TaskServiceError('PROJECT_NOT_FOUND')
+    return project
+  }
+
+  if (!input.project) throw new TaskServiceError('PROJECT_NOT_FOUND')
+
+  return repository.upsertProject({
+    name: input.project.name,
+    jiraProjectKey: input.project.jiraProjectKey?.toUpperCase(),
+  })
+}
+
 export function createTaskService(
   repository: TaskRepository,
   clock: () => string = () => new Date().toISOString(),
@@ -54,10 +69,7 @@ export function createTaskService(
       const existing = await repository.findTaskByJiraKey(jiraKey)
       if (existing) return { kind: 'duplicate', task: existing }
 
-      const project = await repository.upsertProject({
-        name: input.project.name,
-        jiraProjectKey: input.project.jiraProjectKey?.toUpperCase(),
-      })
+      const project = await resolveProject(repository, input)
       let task: TaskWithProject
       try {
         task = await repository.createTask({

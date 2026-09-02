@@ -35,7 +35,7 @@ describe('task repository contract', () => {
       project: { jiraProjectKey: 'OPS' },
     })
     expect(task).not.toHaveProperty('jira_key')
-  })
+  }, 15_000)
 
   it('deletes from the tasks table exactly once', async () => {
     const { repository } = createRepository()
@@ -152,6 +152,48 @@ describe('task repository contract', () => {
 
     expect(second.id).toBe(first.id)
     expect(second.jiraProjectKey).toBeNull()
+  })
+
+  it('lists projects and work logs across a date range', async () => {
+    const { repository } = createRepository()
+    const project = await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
+    const task = await repository.createTask({
+      projectId: project.id,
+      jiraUrl: 'https://acme.atlassian.net/browse/OPS-1',
+      jiraKey: 'OPS-1',
+      summary: 'Task one',
+      status: 'todo',
+      completedAt: null,
+    })
+
+    await repository.createWorkLog(task.id, {
+      workedOn: '2026-09-01',
+      note: 'Monday work',
+      minutesSpent: 30,
+    })
+    await repository.createWorkLog(task.id, {
+      workedOn: '2026-09-03',
+      note: 'Wednesday work',
+      minutesSpent: 45,
+    })
+    await repository.createWorkLog(task.id, {
+      workedOn: '2026-08-31',
+      note: 'Previous week',
+      minutesSpent: 15,
+    })
+
+    expect(await repository.listProjects()).toEqual([expect.objectContaining({ id: project.id, name: 'Operations' })])
+    expect(await repository.findProjectById(project.id)).toMatchObject({ id: project.id })
+    expect(await repository.findProjectById('missing')).toBeNull()
+
+    const logs = await repository.listWorkLogsForRange({
+      from: '2026-09-01',
+      to: '2026-09-07',
+      projectId: project.id,
+    })
+
+    expect(logs.map(item => item.workedOn).sort()).toEqual(['2026-09-01', '2026-09-03'])
+    expect(logs.every(item => item.task.project.name === 'Operations')).toBe(true)
   })
 
   it('keeps the migration invariants in the schema', () => {

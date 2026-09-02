@@ -43,7 +43,9 @@ function applyFilters() {
   return navigateTo({
     path: '/',
     query: {
-      projectId: projectFilter.value.trim() || undefined,
+      projectId: projectFilter.value.trim() && projectFilter.value !== '__new__'
+        ? projectFilter.value.trim()
+        : undefined,
       date: dateFilter.value || undefined,
     },
   })
@@ -84,7 +86,11 @@ useHead({
         </div>
         <label>
           <span>โปรเจกต์</span>
-          <input v-model="projectFilter" name="projectId" placeholder="Project ID (ทั้งหมด)" autocomplete="off">
+          <ProjectsProjectSelect
+            v-model="projectFilter"
+            allow-empty
+            empty-label="ทุกโปรเจกต์"
+          />
         </label>
         <label>
           <span>วันที่</span>

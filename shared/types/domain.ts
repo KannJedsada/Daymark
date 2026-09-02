@@ -49,3 +49,17 @@ export interface DashboardSummary {
   focusedTasks: TaskWithProject[]
   todayActivity: DashboardActivity[]
 }
+
+export interface WeeklyReportDay {
+  date: string
+  activities: DashboardActivity[]
+  totalMinutes: number
+}
+
+export interface WeeklyReport {
+  from: string
+  to: string
+  days: WeeklyReportDay[]
+  totalMinutes: number
+  totalEntries: number
+}

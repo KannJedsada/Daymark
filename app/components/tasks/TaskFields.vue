@@ -1,7 +1,40 @@
 <script setup lang="ts">
+import { z } from 'zod'
+
 import type { TaskCreationForm } from '../../composables/useTaskCreation'
+import { useProjects } from '../../composables/useProjects'
+
+const NEW_PROJECT_VALUE = '__new__'
 
 const model = defineModel<TaskCreationForm>({ required: true })
+const { data: projects } = useProjects()
+
+const usesExistingProject = computed(() => z.uuid().safeParse(model.value.projectId).success)
+const showManualProjectFields = computed(() => !usesExistingProject.value)
+
+watch(
+  [() => model.value.jiraProjectKey, () => model.value.projectName, projects],
+  () => {
+    if (usesExistingProject.value || model.value.projectId === NEW_PROJECT_VALUE) return
+
+    const key = model.value.jiraProjectKey.trim().toUpperCase()
+    const name = model.value.projectName.trim().toLowerCase()
+    const match = projects.value.find(project =>
+      (key && project.jiraProjectKey === key)
+      || (name && project.name.toLowerCase() === name),
+    )
+
+    if (match) {
+      model.value.projectId = match.id
+      return
+    }
+
+    if (!model.value.projectId) {
+      model.value.projectId = NEW_PROJECT_VALUE
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -17,12 +50,28 @@ const model = defineModel<TaskCreationForm>({ required: true })
         />
       </UFormField>
 
+      <UFormField name="projectId" label="โปรเจกต์" required>
+        <ProjectsProjectSelect v-model="model.projectId" />
+      </UFormField>
+    </div>
+
+    <div v-if="showManualProjectFields" class="field-grid">
       <UFormField name="jiraProjectKey" label="รหัสโปรเจกต์" hint="ไม่บังคับ">
         <UInput
           v-model="model.jiraProjectKey"
           name="jiraProjectKey"
           autocomplete="off"
           placeholder="OPS"
+          class="w-full"
+        />
+      </UFormField>
+
+      <UFormField name="projectName" label="ชื่อโปรเจกต์" required>
+        <UInput
+          v-model="model.projectName"
+          name="projectName"
+          autocomplete="off"
+          placeholder="ชื่อโปรเจกต์"
           class="w-full"
         />
       </UFormField>
@@ -34,16 +83,6 @@ const model = defineModel<TaskCreationForm>({ required: true })
         name="summary"
         autocomplete="off"
         placeholder="งานนี้ต้องทำอะไร"
-        class="w-full"
-      />
-    </UFormField>
-
-    <UFormField name="projectName" label="โปรเจกต์" required>
-      <UInput
-        v-model="model.projectName"
-        name="projectName"
-        autocomplete="off"
-        placeholder="ชื่อโปรเจกต์"
         class="w-full"
       />
     </UFormField>
