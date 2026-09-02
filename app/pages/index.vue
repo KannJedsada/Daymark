@@ -17,7 +17,7 @@ const filters = computed(() => ({
 }))
 
 const { data: dashboard, pending, error, refresh } = useDashboard(filters)
-const hasFilters = computed(() => Boolean(filters.value.projectId || filters.value.date))
+const hasFilters = computed(() => hasExplicitDashboardFilters(route.query))
 const totalTasks = computed(() => {
   const counts = dashboard.value.counts
   return counts.todo + counts.inProgress + counts.done

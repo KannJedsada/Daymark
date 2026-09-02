@@ -5,6 +5,11 @@ export interface DashboardFilters {
   date?: string
 }
 
+export function hasExplicitDashboardFilters(query: Record<string, unknown>) {
+  return (typeof query.projectId === 'string' && query.projectId.length > 0)
+    || (typeof query.date === 'string' && query.date.length > 0)
+}
+
 const emptyDashboard = (): DashboardSummary => ({
   counts: { todo: 0, inProgress: 0, done: 0 },
   focusedTasks: [],

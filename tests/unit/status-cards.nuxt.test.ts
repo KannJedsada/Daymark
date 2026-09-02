@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import StatusCards from '../../app/components/dashboard/StatusCards.vue'
 import AppErrorState from '../../app/components/shared/AppErrorState.vue'
+import { hasExplicitDashboardFilters } from '../../app/composables/useDashboard'
 
 describe('StatusCards', () => {
   it('labels every status count in text', async () => {
@@ -26,5 +27,15 @@ describe('StatusCards', () => {
 
     expect(wrapper.attributes('role')).toBe('alert')
     expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+})
+
+describe('dashboard empty-state filters', () => {
+  it('treats a brand-new dashboard as unfiltered', () => {
+    expect(hasExplicitDashboardFilters({})).toBe(false)
+  })
+
+  it('treats an explicit date query as filtered', () => {
+    expect(hasExplicitDashboardFilters({ date: '2026-09-02' })).toBe(true)
   })
 })
