@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Project, TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/domain'
 
-type DatabaseError = { message?: string }
+type DatabaseError = { code?: string, message?: string }
 type QueryResult = { data: unknown; error: DatabaseError | null }
 
 interface QueryBuilder extends PromiseLike<QueryResult> {
@@ -112,9 +112,16 @@ function table(client: TaskRepositoryClient, name: string): QueryBuilder {
 async function execute(query: QueryBuilder): Promise<unknown> {
   const { data, error } = await query
   if (error) {
-    throw new Error(`SUPABASE_QUERY_FAILED: ${error.message ?? 'unknown database error'}`)
+    throw new TaskRepositoryError(error.code)
   }
   return data
+}
+
+export class TaskRepositoryError extends Error {
+  constructor(public readonly databaseCode?: string) {
+    super('TASK_REPOSITORY_QUERY_FAILED')
+    this.name = 'TaskRepositoryError'
+  }
 }
 
 function mapProject(row: ProjectRow): Project {

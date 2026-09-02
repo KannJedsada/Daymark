@@ -37,8 +37,18 @@ export const createWorkLogSchema = z.object({
   minutesSpent: z.int().min(1).max(1_440).optional(),
 })
 
+export const taskListQuerySchema = z.object({
+  status: z.enum(TASK_STATUSES).optional(),
+  projectId: z.uuid().optional(),
+  query: z.string().trim().min(1).max(300).optional(),
+  date: z.iso.date().optional(),
+})
+
+export const taskIdSchema = z.uuid()
+
 export type JiraLookupInput = z.infer<typeof jiraLookupSchema>
 export type CreateTaskInput = z.infer<typeof createTaskSchema>
 export type PatchTaskInput = z.infer<typeof patchTaskSchema>
 export type CreateWorkLogInput = z.infer<typeof createWorkLogSchema>
 export type ProjectInput = z.infer<typeof projectInputSchema>
+export type TaskListQuery = z.infer<typeof taskListQuerySchema>
