@@ -49,6 +49,16 @@ create table work_logs (
   constraint work_logs_note_length check (char_length(btrim(note)) between 1 and 2000)
 );
 
+-- Daymark is a server-only application. The service-role client bypasses RLS;
+-- browser roles receive neither policies nor direct table privileges.
+alter table projects enable row level security;
+alter table tasks enable row level security;
+alter table work_logs enable row level security;
+
+revoke all on table projects from anon, authenticated;
+revoke all on table tasks from anon, authenticated;
+revoke all on table work_logs from anon, authenticated;
+
 alter table work_logs add constraint work_logs_minutes_range check (
   minutes_spent is null or minutes_spent between 1 and 1440
 );

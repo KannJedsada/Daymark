@@ -150,6 +150,26 @@ describe('Supabase task repository contract', () => {
     expect(project.jiraProjectKey).toBe('OPS')
   })
 
+  it('recovers the project when a concurrent insert wins the unique-key race', async () => {
+    const missingKey = createQuery({ data: null, error: null })
+    const missingName = createQuery({ data: null, error: null })
+    const conflict = createQuery({ data: null, error: { code: '23505' } })
+    const concurrent = createQuery({ data: projectRow, error: null })
+    const client = {
+      from: vi.fn()
+        .mockReturnValueOnce(missingKey)
+        .mockReturnValueOnce(missingName)
+        .mockReturnValueOnce(conflict)
+        .mockReturnValueOnce(concurrent),
+    }
+
+    const project = await createTaskRepository(client as never).upsertProject({ name: 'Operations', jiraProjectKey: 'ops' })
+
+    expect(conflict.insert).toHaveBeenCalledWith({ name: 'Operations', jira_project_key: 'OPS' })
+    expect(concurrent.eq).toHaveBeenCalledWith('jira_project_key', 'OPS')
+    expect(project).toMatchObject({ id: projectRow.id, jiraProjectKey: 'OPS' })
+  })
+
   it('lists projects and finds them by id', async () => {
     const list = createQuery({ data: [projectRow], error: null })
     const find = createQuery({ data: projectRow, error: null })
@@ -176,5 +196,9 @@ describe('Supabase task repository contract', () => {
     expect(migration).toContain('tasks_completion_consistent')
     expect(migration).toContain('work_logs_minutes_range')
     expect(migration).toContain('on delete cascade')
+    expect(migration).toContain('alter table projects enable row level security')
+    expect(migration).toContain('alter table tasks enable row level security')
+    expect(migration).toContain('alter table work_logs enable row level security')
+    expect(migration).toContain('revoke all on table tasks from anon, authenticated')
   })
 })

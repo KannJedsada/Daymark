@@ -211,6 +211,18 @@ function taskPayload(input: CreateTaskInput | UpdateTaskInput): Record<string, u
   return payload
 }
 
+async function findProjectForUpsert(
+  client: TaskRepositoryClient,
+  name: string,
+  jiraProjectKey: string | null,
+): Promise<ProjectRow | null> {
+  if (jiraProjectKey) {
+    const byKey = await execute(table(client, 'projects').select().eq('jira_project_key', jiraProjectKey).maybeSingle()) as ProjectRow | null
+    if (byKey) return byKey
+  }
+  return await execute(table(client, 'projects').select().eq('name', name).maybeSingle()) as ProjectRow | null
+}
+
 async function collectActivities(client: TaskRepositoryClient, configure: (query: QueryBuilder) => QueryBuilder): Promise<DashboardActivity[]> {
   const activities: DashboardActivity[] = []
   while (true) {
@@ -281,23 +293,28 @@ export function createTaskRepository(client: TaskRepositoryClient) {
 
     async upsertProject(input: ProjectInput): Promise<Project> {
       const jiraProjectKey = input.jiraProjectKey?.toUpperCase() ?? null
-      if (jiraProjectKey) {
-        const byKey = await execute(table(client, 'projects').select().eq('jira_project_key', jiraProjectKey).maybeSingle()) as ProjectRow | null
-        if (byKey) {
-          const row = await execute(table(client, 'projects').update({ name: input.name }).eq('id', byKey.id).select().single()) as ProjectRow
-          return mapProject(row)
+      try {
+        const existing = await findProjectForUpsert(client, input.name, jiraProjectKey)
+        if (existing) {
+          if (jiraProjectKey && existing.jira_project_key === jiraProjectKey && existing.name !== input.name) {
+            const row = await execute(table(client, 'projects').update({ name: input.name }).eq('id', existing.id).select().single()) as ProjectRow
+            return mapProject(row)
+          }
+          if (jiraProjectKey && !existing.jira_project_key) {
+            const row = await execute(table(client, 'projects').update({ jira_project_key: jiraProjectKey }).eq('id', existing.id).select().single()) as ProjectRow
+            return mapProject(row)
+          }
+          return mapProject(existing)
         }
+        const row = await execute(table(client, 'projects').insert({ name: input.name, jira_project_key: jiraProjectKey }).select().single()) as ProjectRow
+        return mapProject(row)
       }
-      const byName = await execute(table(client, 'projects').select().eq('name', input.name).maybeSingle()) as ProjectRow | null
-      if (byName) {
-        if (jiraProjectKey && !byName.jira_project_key) {
-          const row = await execute(table(client, 'projects').update({ jira_project_key: jiraProjectKey }).eq('id', byName.id).select().single()) as ProjectRow
-          return mapProject(row)
-        }
-        return mapProject(byName)
+      catch (error) {
+        if (!(error instanceof TaskRepositoryError) || error.databaseCode !== '23505') throw error
+        const concurrent = await findProjectForUpsert(client, input.name, jiraProjectKey)
+        if (!concurrent) throw error
+        return mapProject(concurrent)
       }
-      const row = await execute(table(client, 'projects').insert({ name: input.name, jira_project_key: jiraProjectKey }).select().single()) as ProjectRow
-      return mapProject(row)
     },
 
     async createTask(input: CreateTaskInput): Promise<TaskWithProject> {

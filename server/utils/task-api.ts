@@ -29,6 +29,18 @@ export function throwTaskApiError(error: unknown): never {
     statusCode = 422
     body = { code: 'VALIDATION_ERROR', message: 'The request is invalid.' }
   }
+  else if (error instanceof TaskServiceError && error.code === 'DUPLICATE_JIRA') {
+    const duplicateBody: TaskApiErrorBody = {
+      code: 'DUPLICATE_JIRA',
+      message: 'A task already exists for this Jira issue.',
+    }
+    throw createError({
+      statusCode: 409,
+      statusMessage: duplicateBody.message,
+      message: duplicateBody.message,
+      data: { ...duplicateBody, ...(error.task ? { task: error.task } : {}) },
+    })
+  }
 
   throw createError({
     statusCode,

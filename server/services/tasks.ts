@@ -7,10 +7,13 @@ import type { TaskStatus, TaskWithProject, WorkLog } from '../../shared/types/do
 import { applyStatus } from '../../shared/utils/task-rules'
 import { TaskRepositoryError, type TaskFilters, type TaskRepository } from '../repositories/tasks'
 
-export type TaskServiceErrorCode = 'TASK_NOT_FOUND' | 'PROJECT_NOT_FOUND'
+export type TaskServiceErrorCode = 'TASK_NOT_FOUND' | 'PROJECT_NOT_FOUND' | 'DUPLICATE_JIRA'
 
 export class TaskServiceError extends Error {
-  constructor(public readonly code: TaskServiceErrorCode) {
+  constructor(
+    public readonly code: TaskServiceErrorCode,
+    public readonly task?: TaskWithProject,
+  ) {
     super(code)
     this.name = 'TaskServiceError'
   }
@@ -110,7 +113,14 @@ export function createTaskService(
       }
 
       if (Object.keys(update).length === 0) return current
-      return repository.updateTask(id, update)
+      try {
+        return await repository.updateTask(id, update)
+      }
+      catch (error) {
+        if (!(error instanceof TaskRepositoryError) || error.databaseCode !== '23505' || !update.jiraKey) throw error
+        const duplicate = await repository.findTaskByJiraKey(update.jiraKey)
+        throw new TaskServiceError('DUPLICATE_JIRA', duplicate ?? undefined)
+      }
     },
 
     async changeStatus(id: string, status: TaskStatus): Promise<TaskWithProject> {

@@ -146,6 +146,22 @@ describe('task service workflow', () => {
     expect(repo.updateTask).toHaveBeenLastCalledWith(TASK_ID, { status: 'todo', completedAt: null })
   })
 
+  it('turns a duplicate Jira key during edit into a stable service error with the existing task', async () => {
+    const duplicate = task({ id: '00000000-0000-4000-8000-000000000099', jiraKey: 'OPS-999' })
+    const findTaskByJiraKey = vi.fn(async () => duplicate)
+    const repo = repository({
+      findTaskByJiraKey,
+      updateTask: vi.fn(async () => { throw new TaskRepositoryError('23505') }),
+    })
+    const service = createTaskService(repo as never, () => NOW)
+
+    await expect(service.updateTask(TASK_ID, { jiraKey: 'ops-999' })).rejects.toMatchObject({
+      code: 'DUPLICATE_JIRA',
+      task: duplicate,
+    })
+    expect(findTaskByJiraKey).toHaveBeenCalledWith('OPS-999')
+  })
+
   it('requires the task and creates a work log with the supplied Bangkok work date', async () => {
     const repo = repository()
     const service = createTaskService(repo as never, () => NOW)
@@ -273,6 +289,22 @@ describe('task route contracts', () => {
     })
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 422, data: { code: 'VALIDATION_ERROR' },
+    })
+  })
+
+  it('maps a duplicate Jira key during edit to 409 with the existing task', async () => {
+    const duplicate = task({ id: '00000000-0000-4000-8000-000000000099', jiraKey: 'OPS-999' })
+    const handler = createPatchTaskHandler({
+      service: () => ({
+        updateTask: vi.fn(async () => { throw new TaskServiceError('DUPLICATE_JIRA', duplicate) }),
+      } as never),
+      id: () => TASK_ID,
+      readBody: vi.fn(async (_event, validate) => validate({ jiraKey: 'OPS-999' })),
+    })
+
+    await expect(handler({} as never)).rejects.toMatchObject({
+      statusCode: 409,
+      data: { code: 'DUPLICATE_JIRA', task: duplicate },
     })
   })
 })
