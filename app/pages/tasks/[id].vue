@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TaskDetail } from '../../composables/useTasks'
 import type { TaskWithProject, WorkLog } from '~~/shared/types/domain'
+import { patchTaskSchema } from '~~/shared/schemas/task'
 import { useTaskDetail } from '../../composables/useTasks'
 
 const route = useRoute()
@@ -19,12 +20,41 @@ const deleteError = ref('')
 const editing = ref(false)
 const saving = ref(false)
 const editError = ref('')
+type EditField = 'jiraUrl' | 'jiraKey' | 'summary' | 'projectId'
+const editFieldErrors = reactive<Partial<Record<EditField, string>>>({})
 const editForm = reactive({
   jiraUrl: '',
   jiraKey: '',
   summary: '',
   projectId: '',
 })
+
+const editFieldIds: Record<EditField, string> = {
+  jiraUrl: 'edit-jira-url',
+  jiraKey: 'edit-jira-key',
+  summary: 'edit-summary',
+  projectId: 'edit-project',
+}
+
+function clearEditFieldErrors() {
+  editFieldErrors.jiraUrl = undefined
+  editFieldErrors.jiraKey = undefined
+  editFieldErrors.summary = undefined
+  editFieldErrors.projectId = undefined
+}
+
+function describeEditIssue(field: EditField) {
+  if (field === 'jiraUrl') return 'กรุณากรอกลิงก์ Jira ที่ถูกต้อง'
+  if (field === 'jiraKey') return 'กรุณากรอกรหัส Jira ไม่เกิน 100 ตัวอักษร'
+  if (field === 'summary') return 'กรุณากรอกชื่องานไม่เกิน 300 ตัวอักษร'
+  return 'กรุณาเลือกโปรเจกต์'
+}
+
+async function focusFirstEditError() {
+  await nextTick()
+  const firstField = (Object.keys(editFieldIds) as EditField[]).find(field => editFieldErrors[field])
+  if (firstField) document.getElementById(editFieldIds[firstField])?.focus()
+}
 
 function resetEditForm() {
   if (!task.value) return
@@ -33,6 +63,7 @@ function resetEditForm() {
   editForm.summary = task.value.summary
   editForm.projectId = task.value.projectId
   editError.value = ''
+  clearEditFieldErrors()
 }
 
 function beginEditing() {
@@ -56,29 +87,33 @@ function formatTimestamp(value: string) {
 async function saveTask() {
   if (!task.value || saving.value) return
 
-  const jiraUrl = editForm.jiraUrl.trim()
-  const jiraKey = editForm.jiraKey.trim().toUpperCase()
-  const summary = editForm.summary.trim()
-  if (!jiraUrl || !jiraKey || !summary || !editForm.projectId) {
-    editError.value = 'กรุณากรอกลิงก์ Jira รหัสงาน ชื่องาน และโปรเจกต์ให้ครบ'
-    return
-  }
-
-  try {
-    const parsedUrl = new URL(jiraUrl)
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Unsupported protocol')
-  }
-  catch {
-    editError.value = 'ลิงก์ Jira ต้องเป็น URL ที่ถูกต้อง'
+  editError.value = ''
+  clearEditFieldErrors()
+  const parsed = patchTaskSchema.safeParse({
+    jiraUrl: editForm.jiraUrl.trim(),
+    jiraKey: editForm.jiraKey.trim().toUpperCase(),
+    summary: editForm.summary.trim(),
+    projectId: editForm.projectId,
+  })
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0]
+      if (
+        (field === 'jiraUrl' || field === 'jiraKey' || field === 'summary' || field === 'projectId')
+        && !editFieldErrors[field]
+      ) {
+        editFieldErrors[field] = describeEditIssue(field)
+      }
+    }
+    await focusFirstEditError()
     return
   }
 
   saving.value = true
-  editError.value = ''
   try {
     const updated = await $fetch<TaskWithProject>(`/api/tasks/${task.value.id}`, {
       method: 'PATCH',
-      body: { jiraUrl, jiraKey, summary, projectId: editForm.projectId },
+      body: parsed.data,
     })
     onTaskUpdated(updated)
     editing.value = false
@@ -176,21 +211,64 @@ useHead({
         <form v-if="editing" class="edit-form" novalidate @submit.prevent="saveTask">
           <label for="edit-jira-url">
             <span>ลิงก์ Jira</span>
-            <input id="edit-jira-url" v-model="editForm.jiraUrl" name="jiraUrl" type="url" required>
+            <input
+              id="edit-jira-url"
+              v-model="editForm.jiraUrl"
+              name="jiraUrl"
+              type="url"
+              required
+              :aria-invalid="editFieldErrors.jiraUrl ? 'true' : undefined"
+              :aria-describedby="editFieldErrors.jiraUrl ? 'edit-jira-url-error' : undefined"
+            >
+            <small v-if="editFieldErrors.jiraUrl" id="edit-jira-url-error" class="edit-field-error" role="alert">
+              {{ editFieldErrors.jiraUrl }}
+            </small>
           </label>
           <div class="edit-grid">
             <label for="edit-jira-key">
               <span>รหัส Jira</span>
-              <input id="edit-jira-key" v-model="editForm.jiraKey" name="jiraKey" required maxlength="100">
+              <input
+                id="edit-jira-key"
+                v-model="editForm.jiraKey"
+                name="jiraKey"
+                required
+                maxlength="100"
+                :aria-invalid="editFieldErrors.jiraKey ? 'true' : undefined"
+                :aria-describedby="editFieldErrors.jiraKey ? 'edit-jira-key-error' : undefined"
+              >
+              <small v-if="editFieldErrors.jiraKey" id="edit-jira-key-error" class="edit-field-error" role="alert">
+                {{ editFieldErrors.jiraKey }}
+              </small>
             </label>
             <label for="edit-project">
               <span>โปรเจกต์</span>
-              <ProjectsProjectSelect id="edit-project" v-model="editForm.projectId" name="projectId" :allow-create="false" />
+              <ProjectsProjectSelect
+                id="edit-project"
+                v-model="editForm.projectId"
+                name="projectId"
+                :allow-create="false"
+                :aria-invalid="editFieldErrors.projectId ? 'true' : undefined"
+                :aria-describedby="editFieldErrors.projectId ? 'edit-project-error' : undefined"
+              />
+              <small v-if="editFieldErrors.projectId" id="edit-project-error" class="edit-field-error" role="alert">
+                {{ editFieldErrors.projectId }}
+              </small>
             </label>
           </div>
           <label for="edit-summary">
             <span>ชื่องาน</span>
-            <input id="edit-summary" v-model="editForm.summary" name="summary" required maxlength="300">
+            <input
+              id="edit-summary"
+              v-model="editForm.summary"
+              name="summary"
+              required
+              maxlength="300"
+              :aria-invalid="editFieldErrors.summary ? 'true' : undefined"
+              :aria-describedby="editFieldErrors.summary ? 'edit-summary-error' : undefined"
+            >
+            <small v-if="editFieldErrors.summary" id="edit-summary-error" class="edit-field-error" role="alert">
+              {{ editFieldErrors.summary }}
+            </small>
           </label>
           <p v-if="editError" class="edit-error" role="alert">{{ editError }}</p>
           <div class="edit-actions">
@@ -258,6 +336,7 @@ h1 { margin: 0; color: var(--green); font-family: var(--font-display); font-size
 .secondary-button { color: var(--green); background: transparent; border: 1px solid var(--line); }
 .primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: .65; }
 .edit-error { margin: 0; color: var(--orange-strong); font-size: .82rem; }
+.edit-field-error { display: block; margin-top: .35rem; color: var(--orange-strong); font-size: .75rem; }
 .detail-list { display: grid; grid-template-columns: .8fr 1fr 2fr; gap: 1rem; margin: 1rem 0 0; }
 .detail-list div { min-width: 0; }
 .detail-list dt { color: var(--muted); font-size: .72rem; }

@@ -15,7 +15,7 @@ const showManualProjectFields = computed(() => !usesExistingProject.value)
 watch(
   [() => model.value.jiraProjectKey, () => model.value.projectName, projects],
   () => {
-    if (usesExistingProject.value || model.value.projectId === NEW_PROJECT_VALUE) return
+    if (usesExistingProject.value) return
 
     const key = model.value.jiraProjectKey.trim().toUpperCase()
     const name = model.value.projectName.trim().toLowerCase()
@@ -29,9 +29,7 @@ watch(
       return
     }
 
-    if (!model.value.projectId) {
-      model.value.projectId = NEW_PROJECT_VALUE
-    }
+    model.value.projectId = NEW_PROJECT_VALUE
   },
   { immediate: true },
 )

@@ -117,6 +117,9 @@ export function useTaskCreation(onCreated: (task: TaskWithProject) => void) {
         jiraUrl: issue.jiraUrl,
         jiraKey: issue.jiraKey,
         summary: issue.summary,
+        // A previous lookup may have resolved a different project to its UUID.
+        // Reset first so TaskFields can resolve the new Jira project independently.
+        projectId: '',
         projectName: issue.project.name,
         jiraProjectKey: issue.project.jiraProjectKey,
       })

@@ -94,6 +94,57 @@ describe('AddTaskModal', () => {
     expect(wrapper.get('[data-testid="default-status"]').text()).toContain('Todo')
   }, 15_000)
 
+  it('does not reuse an existing project selected by an earlier Jira lookup', async () => {
+    clearNuxtData('projects')
+    const existingProjectId = '00000000-0000-4000-8000-000000000020'
+    const secondIssue = {
+      jiraKey: 'BILL-72',
+      jiraUrl: 'https://acme.atlassian.net/browse/BILL-72',
+      summary: 'Reconcile invoices',
+      project: { name: 'Billing', jiraProjectKey: 'BILL' },
+    }
+    let lookupCount = 0
+
+    fetchMock.mockImplementation(async (url: string, options?: { method?: string }) => {
+      if (url === '/api/projects') {
+        return [{
+          id: existingProjectId,
+          name: issue.project.name,
+          jiraProjectKey: issue.project.jiraProjectKey,
+          createdAt: createdTask.createdAt,
+          updatedAt: createdTask.updatedAt,
+        }]
+      }
+      if (url === '/api/jira/lookup') return lookupCount++ === 0 ? issue : secondIssue
+      if (url === '/api/tasks' && options?.method === 'POST') return { ...createdTask, ...secondIssue }
+      throw new Error(`Unhandled fetch: ${url}`)
+    })
+    const wrapper = await mountModal()
+
+    await lookup(wrapper)
+    expect((wrapper.get('[name="projectId"]').element as HTMLSelectElement).value).toBe(existingProjectId)
+
+    await wrapper.get('[name="jiraUrl"]').setValue(secondIssue.jiraUrl)
+    await wrapper.get('[data-testid="jira-lookup"]').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.get('[name="projectId"]').element as HTMLSelectElement).value).toBe('__new__')
+    expect((wrapper.get('[name="projectName"]').element as HTMLInputElement).value).toBe('Billing')
+    await submitForm(wrapper)
+
+    const createCall = fetchMock.mock.calls.find(call => call[0] === '/api/tasks')
+    expect(createCall?.[1]).toEqual(expect.objectContaining({
+      method: 'POST',
+      body: {
+        jiraUrl: secondIssue.jiraUrl,
+        jiraKey: secondIssue.jiraKey,
+        summary: secondIssue.summary,
+        project: { name: 'Billing', jiraProjectKey: 'BILL' },
+      },
+    }))
+    expect(createCall?.[1]?.body).not.toHaveProperty('projectId')
+  })
+
   it('preserves the Jira URL and reveals manual fields after a safe lookup failure', async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/projects') return []

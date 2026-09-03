@@ -176,6 +176,31 @@ describe('task detail workflows', () => {
     expect(wrapper.text()).toContain('Updated order status API')
   })
 
+  it('validates each metadata field with accessible errors before patching', async () => {
+    const wrapper = await mountDetail()
+
+    await wrapper.get('[data-testid="edit-task"]').trigger('click')
+    await wrapper.get('[name="jiraUrl"]').setValue('not-a-url')
+    await wrapper.get('[name="jiraKey"]').setValue('')
+    await wrapper.get('[name="summary"]').setValue('')
+    await wrapper.get('[name="projectId"]').setValue('')
+    await wrapper.find('form.edit-form').trigger('submit')
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    for (const [name, errorId] of [
+      ['jiraUrl', 'edit-jira-url-error'],
+      ['jiraKey', 'edit-jira-key-error'],
+      ['summary', 'edit-summary-error'],
+      ['projectId', 'edit-project-error'],
+    ] as const) {
+      const field = wrapper.get(`[name="${name}"]`)
+      expect(field.attributes('aria-invalid')).toBe('true')
+      expect(field.attributes('aria-describedby')).toBe(errorId)
+      expect(wrapper.get(`#${errorId}`).attributes('role')).toBe('alert')
+    }
+  })
+
   it('shows created, updated, and completed timestamps', async () => {
     const wrapper = await mountDetail({ completedAt: NOW })
 
