@@ -1,4 +1,4 @@
-import type { DashboardSummary } from '../../shared/types/domain'
+import type { DashboardSummary } from '~~/shared/types/domain'
 
 export interface DashboardFilters {
   projectId?: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TaskStatus } from '../../../shared/types/domain'
+import type { TaskStatus, TaskWithProject } from '~~/shared/types/domain'
 import { hasExplicitTaskFilters, useTasks } from '../../composables/useTasks'
 
 const route = useRoute()
@@ -79,6 +79,12 @@ function clearFilters() {
   return navigateTo('/tasks')
 }
 
+function onTaskUpdated(updated: TaskWithProject) {
+  const index = tasks.value.findIndex(task => task.id === updated.id)
+  if (index === -1) return
+  tasks.value[index] = updated
+}
+
 useHead({
   title: 'งานทั้งหมด · DAYMARK',
   meta: [{ name: 'description', content: 'ค้นหา กรอง และติดตามงานทั้งหมด' }],
@@ -120,7 +126,7 @@ useHead({
       @action="clearFilters"
     />
 
-    <TasksTaskList v-else :tasks="tasks" />
+    <TasksTaskList v-else :tasks="tasks" @updated="onTaskUpdated" />
   </div>
 </template>
 

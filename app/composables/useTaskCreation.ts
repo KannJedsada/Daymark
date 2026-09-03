@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { TaskWithProject } from '../../shared/types/domain'
+import type { TaskWithProject } from '~~/shared/types/domain'
 
 const requiredText = (label: string, maximum: number) => z.string()
   .trim()

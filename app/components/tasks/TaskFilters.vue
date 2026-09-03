@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { TaskStatus } from '../../../shared/types/domain'
-import { TASK_STATUSES } from '../../../shared/types/domain'
+import type { TaskStatus } from '~~/shared/types/domain'
+import { TASK_STATUSES } from '~~/shared/types/domain'
 
 export interface TaskFilterValues {
   status: string

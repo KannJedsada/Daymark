@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import type { TaskWithProject } from '../../../shared/types/domain'
+import type { TaskWithProject } from '~~/shared/types/domain'
 import {
   taskCreationFormSchema,
   type TaskCreationForm,

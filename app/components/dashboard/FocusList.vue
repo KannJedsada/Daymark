@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TaskWithProject } from '../../../shared/types/domain'
+import type { TaskWithProject } from '~~/shared/types/domain'
 
 defineProps<{ tasks: TaskWithProject[] }>()
 

@@ -1,4 +1,4 @@
-import type { WeeklyReport } from '../../shared/types/domain'
+import type { WeeklyReport } from '~~/shared/types/domain'
 
 export interface WeeklyReportFilters {
   week?: string

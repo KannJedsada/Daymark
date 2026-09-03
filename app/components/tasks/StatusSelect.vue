@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import type { TaskStatus, TaskWithProject } from '../../../shared/types/domain'
-import { TASK_STATUSES } from '../../../shared/types/domain'
+import type { TaskStatus, TaskWithProject } from '~~/shared/types/domain'
+import { TASK_STATUSES } from '~~/shared/types/domain'
 
-const model = defineModel<TaskStatus>({ required: true })
+const model = defineModel<TaskStatus>()
 
 const props = defineProps<{
   taskId: string
   disabled?: boolean
+  label?: string
 }>()
 
 const emit = defineEmits<{
@@ -15,6 +16,8 @@ const emit = defineEmits<{
 
 const busy = ref(false)
 const errorMessage = ref('')
+const fieldId = computed(() => `task-status-${props.taskId}`)
+const errorId = computed(() => `task-status-error-${props.taskId}`)
 
 const options: Array<{ value: TaskStatus, label: string }> = [
   { value: 'todo', label: 'Todo' },
@@ -24,7 +27,7 @@ const options: Array<{ value: TaskStatus, label: string }> = [
 
 async function onStatusChange(event: Event) {
   const next = (event.target as HTMLSelectElement).value as TaskStatus
-  if (!TASK_STATUSES.includes(next) || next === model.value || busy.value || props.disabled) return
+  if (!model.value || !TASK_STATUSES.includes(next) || next === model.value || busy.value || props.disabled) return
 
   const previous = model.value
   errorMessage.value = ''
@@ -52,20 +55,21 @@ async function onStatusChange(event: Event) {
 
 <template>
   <div class="status-select">
-    <label for="task-status">สถานะ</label>
+    <label :for="fieldId">{{ label ?? 'สถานะ' }}</label>
     <select
-      id="task-status"
+      :id="fieldId"
       name="status"
       :value="model"
       :disabled="disabled || busy"
-      :aria-describedby="errorMessage ? 'status-error' : undefined"
+      :aria-describedby="errorMessage ? errorId : undefined"
+      :aria-invalid="errorMessage ? 'true' : undefined"
       @change="onStatusChange"
     >
       <option v-for="option in options" :key="option.value" :value="option.value">
         {{ option.label }}
       </option>
     </select>
-    <p v-if="errorMessage" id="status-error" class="field-error" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" :id="errorId" class="field-error" role="alert">{{ errorMessage }}</p>
   </div>
 </template>
 

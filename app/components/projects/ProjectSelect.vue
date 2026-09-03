@@ -7,10 +7,12 @@ const props = withDefaults(defineProps<{
   allowEmpty?: boolean
   emptyLabel?: string
   name?: string
+  allowCreate?: boolean
 }>(), {
   allowEmpty: false,
   emptyLabel: 'ทุกโปรเจกต์',
   name: 'projectId',
+  allowCreate: true,
 })
 
 const model = defineModel<string>({ required: true })
@@ -40,7 +42,7 @@ function onChange(event: Event) {
     >
       {{ projectLabel(project) }}
     </option>
-    <option v-if="!allowEmpty" :value="NEW_PROJECT_VALUE">
+    <option v-if="!allowEmpty && allowCreate" :value="NEW_PROJECT_VALUE">
       + เพิ่มโปรเจกต์ใหม่
     </option>
   </select>

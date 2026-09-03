@@ -1,4 +1,4 @@
-import type { TaskStatus, TaskWithProject } from '../../shared/types/domain'
+import type { TaskStatus, TaskWithProject } from '~~/shared/types/domain'
 
 export interface TaskListFilters {
   status?: TaskStatus

@@ -1,4 +1,4 @@
-import type { Project } from '../../shared/types/domain'
+import type { Project } from '~~/shared/types/domain'
 
 export function useProjects() {
   const request = useFetch<Project[]>('/api/projects', {

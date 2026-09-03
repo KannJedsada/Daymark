@@ -26,7 +26,7 @@ function handleCreated() {
       <div class="header-inner">
         <NuxtLink class="wordmark" to="/" aria-label="DAYMARK หน้าแรก">
           <span class="wordmark-mark" aria-hidden="true">D</span>
-          <span>DAYMARK</span>
+          <span class="wordmark-text">DAYMARK</span>
         </NuxtLink>
 
         <nav aria-label="เมนูหลัก">
@@ -45,9 +45,9 @@ function handleCreated() {
           </ul>
         </nav>
 
-        <button class="add-task-button" type="button" @click="requestAddTask">
+        <button class="add-task-button" type="button" aria-label="เพิ่มงาน" @click="requestAddTask">
           <span aria-hidden="true">＋</span>
-          <span>เพิ่มงาน</span>
+          <span class="add-task-label">เพิ่มงาน</span>
         </button>
       </div>
 
@@ -76,9 +76,14 @@ function handleCreated() {
 .add-task-button { justify-self: end; display: inline-flex; min-height: 2.85rem; align-items: center; gap: .4rem; padding: .65rem 1.05rem; color: white; background: var(--orange-strong); border: 0; border-radius: 999px; box-shadow: 0 8px 20px rgb(168 59 28 / 22%); cursor: pointer; font-weight: 600; transition: transform 160ms ease, box-shadow 160ms ease; }
 .add-task-button:hover { transform: translateY(-2px); box-shadow: 0 11px 24px rgb(232 97 53 / 28%); }
 @media (max-width: 46rem) {
-  .header-inner { grid-template-columns: 1fr auto; min-height: 4.5rem; }
+  .header-inner { grid-template-columns: 1fr auto; width: min(100% - 1rem, 78rem); min-height: 4.5rem; }
   nav { grid-column: 1 / -1; grid-row: 2; padding-bottom: .55rem; }
-  .nav-list { justify-content: center; }
+  .nav-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+  .nav-link { min-height: 2.75rem; justify-content: center; padding: .55rem .25rem; font-size: clamp(.72rem, 3.3vw, .9rem); white-space: nowrap; }
   .nav-english { display: none; }
+}
+@media (max-width: 22rem) {
+  .wordmark-text, .add-task-label { display: none; }
+  .add-task-button { min-width: 2.85rem; justify-content: center; padding-inline: .7rem; }
 }
 </style>

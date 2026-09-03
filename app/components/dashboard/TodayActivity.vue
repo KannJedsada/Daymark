@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DashboardActivity } from '../../../shared/types/domain'
+import type { DashboardActivity } from '~~/shared/types/domain'
 
 defineProps<{ activity: DashboardActivity[] }>()
 

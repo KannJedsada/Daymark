@@ -1,7 +1,26 @@
 <script setup lang="ts">
-import type { TaskStatus, TaskWithProject } from "../../../shared/types/domain";
+import type { TaskStatus, TaskWithProject } from '~~/shared/types/domain'
 
-defineProps<{ tasks: TaskWithProject[] }>();
+const { tasks } = defineProps<{ tasks: TaskWithProject[] }>()
+
+const emit = defineEmits<{
+  updated: [task: TaskWithProject]
+}>()
+
+const statusByTask = reactive<Record<string, TaskStatus>>({})
+
+watch(
+  () => tasks,
+  (nextTasks) => {
+    for (const task of nextTasks) statusByTask[task.id] = task.status
+  },
+  { immediate: true, deep: true },
+)
+
+function onUpdated(task: TaskWithProject) {
+  statusByTask[task.id] = task.status
+  emit('updated', task)
+}
 
 function statusLabel(status: TaskStatus) {
   if (status === "in_progress") return "In progress";
@@ -22,19 +41,23 @@ function statusLabel(status: TaskStatus) {
 
     <ol v-if="tasks.length" class="task-list" role="list">
       <li v-for="task in tasks" :key="task.id" role="listitem">
-        <NuxtLink class="task-row" :to="`/tasks/${task.id}`">
+        <div class="task-row">
+          <NuxtLink class="task-link" :to="`/tasks/${task.id}`">
           <span class="task-copy">
             <strong>{{ task.summary }}</strong>
             <span>{{ task.project.name }} · {{ task.jiraKey }}</span>
           </span>
-          <span
-            class="status-pill"
-            :class="`status-${task.status}`"
-            data-status-label
-          >
-            {{ statusLabel(task.status) }}
-          </span>
-        </NuxtLink>
+          </NuxtLink>
+          <div class="task-status-control">
+            <span class="sr-only" data-status-label>{{ statusLabel(statusByTask[task.id] ?? task.status) }}</span>
+            <TasksStatusSelect
+              v-model="statusByTask[task.id]"
+              :task-id="task.id"
+              label="เปลี่ยนสถานะ"
+              @updated="onUpdated"
+            />
+          </div>
+        </div>
       </li>
     </ol>
 
@@ -89,16 +112,19 @@ h2 {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.1rem 0.3rem;
+}
+.task-link {
+  min-width: 0;
+  flex: 1;
+  padding: .35rem 0;
   color: inherit;
   text-decoration: none;
-  transition:
-    padding 160ms ease,
-    color 160ms ease;
+  transition: color 160ms ease, transform 160ms ease;
 }
-.task-row:hover,
-.task-row:focus-visible {
-  padding-inline: 0.7rem 0.3rem;
+.task-link:hover,
+.task-link:focus-visible {
   color: var(--green);
+  transform: translateX(.35rem);
 }
 .task-copy {
   min-width: 0;
@@ -119,26 +145,7 @@ h2 {
   color: var(--muted);
   font-size: 0.8rem;
 }
-.status-pill {
-  display: inline-flex;
-  min-height: 2rem;
-  align-items: center;
-  padding: 0.3rem 0.65rem;
-  color: var(--green);
-  background: var(--green-soft);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.status-in_progress {
-  color: #813519;
-  background: var(--orange-soft);
-}
-.status-done {
-  color: #2f4f45;
-  background: #d7e8df;
-}
+.task-status-control { width: min(11rem, 42vw); flex: 0 0 auto; }
 .section-empty {
   margin: 1.5rem 0 0;
   color: var(--muted);
@@ -148,5 +155,6 @@ h2 {
     flex-direction: column;
     align-items: flex-start;
   }
+  .task-link, .task-status-control { width: 100%; }
 }
 </style>

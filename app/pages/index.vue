@@ -24,6 +24,7 @@ const totalTasks = computed(() => {
 })
 
 const thaiDate = computed(() => new Intl.DateTimeFormat('th-TH', {
+  timeZone: 'Asia/Bangkok',
   weekday: 'long',
   day: 'numeric',
   month: 'long',

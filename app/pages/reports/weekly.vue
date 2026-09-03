@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { addBangkokDays } from '../../../shared/utils/date'
+import { addBangkokDays } from '~~/shared/utils/date'
 import { projectLabel } from '../../composables/useProjects'
 import { useWeeklyReport } from '../../composables/useWeeklyReport'
 
@@ -29,6 +29,7 @@ const weekLabel = computed(() => {
   const from = new Date(`${report.value.from}T00:00:00+07:00`)
   const to = new Date(`${report.value.to}T00:00:00+07:00`)
   const formatter = new Intl.DateTimeFormat('th-TH', {
+    timeZone: 'Asia/Bangkok',
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -38,6 +39,7 @@ const weekLabel = computed(() => {
 
 function formatDay(date: string) {
   return new Intl.DateTimeFormat('th-TH', {
+    timeZone: 'Asia/Bangkok',
     weekday: 'long',
     day: 'numeric',
     month: 'long',
