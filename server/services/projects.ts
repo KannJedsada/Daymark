@@ -4,11 +4,11 @@ import type { TaskRepository } from '../repositories/tasks'
 
 export function createProjectService(repository: Pick<TaskRepository, 'listProjects' | 'upsertProject'>) {
   return {
-    listProjects(): Project[] {
+    listProjects(): Promise<Project[]> {
       return repository.listProjects()
     },
 
-    createProject(input: CreateProjectBody): Project {
+    createProject(input: CreateProjectBody): Promise<Project> {
       return repository.upsertProject({
         name: input.name,
         jiraProjectKey: input.jiraProjectKey,

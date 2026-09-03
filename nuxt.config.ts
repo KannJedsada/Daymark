@@ -4,7 +4,9 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   devtools: { enabled: true },
   runtimeConfig: {
-    databasePath: './data/daymark.sqlite',
+    supabaseUrl: '',
+    supabaseServiceRoleKey: '',
+    e2eTestMode: false,
     jiraBaseUrl: '',
     jiraEmail: '',
     jiraApiToken: '',

@@ -2,9 +2,8 @@ import { createError, defineEventHandler, getQuery, type H3Event } from 'h3'
 import { ZodError } from 'zod'
 
 import { dashboardQuerySchema } from '../../shared/schemas/task'
-import { createTaskRepository } from '../repositories/tasks'
 import { createDashboardService, type DashboardService } from '../services/dashboard'
-import { getDatabase } from '../utils/database'
+import { createServerTaskRepository } from '../utils/repository'
 
 interface Dependencies {
   service: () => DashboardService
@@ -12,7 +11,7 @@ interface Dependencies {
 }
 
 export function useDashboardService(): DashboardService {
-  return createDashboardService(createTaskRepository(getDatabase()))
+  return createDashboardService(createServerTaskRepository())
 }
 
 export function createDashboardHandler(dependencies: Dependencies) {

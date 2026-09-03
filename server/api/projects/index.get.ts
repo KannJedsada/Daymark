@@ -4,7 +4,7 @@ import { throwProjectApiError, useProjectService } from '../../utils/project-api
 
 export default defineEventHandler(async () => {
   try {
-    return useProjectService().listProjects()
+    return await useProjectService().listProjects()
   }
   catch (error) {
     throwProjectApiError(error)

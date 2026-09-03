@@ -1,9 +1,8 @@
 import { createError, isError } from 'h3'
 import { ZodError } from 'zod'
 
-import { createTaskRepository } from '../repositories/tasks'
 import { createProjectService, type ProjectService } from '../services/projects'
-import { getDatabase } from './database'
+import { createServerTaskRepository } from './repository'
 
 export interface ProjectApiErrorBody {
   code: 'VALIDATION_ERROR' | 'STORAGE_ERROR'
@@ -11,7 +10,7 @@ export interface ProjectApiErrorBody {
 }
 
 export function useProjectService(): ProjectService {
-  return createProjectService(createTaskRepository(getDatabase()))
+  return createProjectService(createServerTaskRepository())
 }
 
 export function throwProjectApiError(error: unknown): never {

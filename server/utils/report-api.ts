@@ -1,9 +1,8 @@
 import { createError, isError } from 'h3'
 import { ZodError } from 'zod'
 
-import { createTaskRepository } from '../repositories/tasks'
 import { createReportService, type ReportService } from '../services/reports'
-import { getDatabase } from './database'
+import { createServerTaskRepository } from './repository'
 
 export interface ReportApiErrorBody {
   code: 'VALIDATION_ERROR' | 'STORAGE_ERROR'
@@ -11,7 +10,7 @@ export interface ReportApiErrorBody {
 }
 
 export function useReportService(): ReportService {
-  return createReportService(createTaskRepository(getDatabase()))
+  return createReportService(createServerTaskRepository())
 }
 
 export function throwReportApiError(error: unknown): never {

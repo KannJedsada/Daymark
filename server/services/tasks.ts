@@ -31,7 +31,7 @@ async function requireTask(repository: TaskRepository, id: string): Promise<Task
 }
 
 function isUniqueViolation(code?: string) {
-  return code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE'
+  return code === '23505'
 }
 
 async function resolveProject(repository: TaskRepository, input: ValidatedCreateTaskInput) {

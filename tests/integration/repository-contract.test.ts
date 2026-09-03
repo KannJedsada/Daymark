@@ -1,208 +1,180 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+
+import { describe, expect, it, vi } from 'vitest'
 
 import { createTaskRepository } from '../../server/repositories/tasks'
-import { createDatabase } from '../../server/utils/database'
 
-function createRepository() {
-  const db = createDatabase(':memory:')
-  return { db, repository: createTaskRepository(db) }
+function createQuery(result: unknown = { data: null, error: null }) {
+  const query = {
+    delete: vi.fn(),
+    eq: vi.fn(),
+    gte: vi.fn(),
+    ilike: vi.fn(),
+    insert: vi.fn(),
+    lte: vi.fn(),
+    maybeSingle: vi.fn(),
+    order: vi.fn(),
+    range: vi.fn(),
+    select: vi.fn(),
+    single: vi.fn(),
+    then: (resolveResult: (value: unknown) => unknown) => Promise.resolve(result).then(resolveResult),
+    update: vi.fn(),
+  }
+  for (const method of ['delete', 'eq', 'gte', 'ilike', 'insert', 'lte', 'maybeSingle', 'order', 'range', 'select', 'single', 'update'] as const) {
+    query[method].mockReturnValue(query)
+  }
+  return query
 }
 
-describe('task repository contract', () => {
-  afterEach(() => {
-    // in-memory databases are discarded with each test instance
-  })
+const projectRow = {
+  id: '00000000-0000-4000-8000-000000000001',
+  name: 'Operations',
+  jira_project_key: 'OPS',
+  created_at: '2026-09-01T08:00:00.000Z',
+  updated_at: '2026-09-01T08:00:00.000Z',
+}
 
-  it('normalizes Jira keys and maps database rows to domain objects', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
-    await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-421',
-      jiraKey: 'ops-421',
-      summary: 'Order status API',
-      status: 'todo',
-      completedAt: null,
-    })
+function taskRow(id = '00000000-0000-4000-8000-000000000002') {
+  return {
+    id,
+    project_id: projectRow.id,
+    jira_url: 'https://acme.atlassian.net/browse/OPS-421',
+    jira_key: 'OPS-421',
+    summary: 'Order status API',
+    status: 'todo',
+    created_at: '2026-09-01T08:00:00.000Z',
+    updated_at: '2026-09-01T08:00:00.000Z',
+    completed_at: null,
+    project: projectRow,
+  }
+}
 
-    const task = await repository.findTaskByJiraKey('ops-421')
+describe('Supabase task repository contract', () => {
+  it('normalizes Jira keys and maps snake_case rows to domain objects', async () => {
+    const query = createQuery({ data: taskRow(), error: null })
+    const client = { from: vi.fn(() => query) }
 
-    expect(task).toMatchObject({
-      jiraKey: 'OPS-421',
-      projectId: project.id,
-      project: { jiraProjectKey: 'OPS' },
-    })
+    const task = await createTaskRepository(client as never).findTaskByJiraKey('ops-421')
+
+    expect(query.eq).toHaveBeenCalledWith('jira_key', 'OPS-421')
+    expect(task).toMatchObject({ jiraKey: 'OPS-421', projectId: projectRow.id, project: { jiraProjectKey: 'OPS' } })
     expect(task).not.toHaveProperty('jira_key')
-  }, 15_000)
-
-  it('deletes from the tasks table exactly once', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations' })
-    const created = await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-1',
-      jiraKey: 'OPS-1',
-      summary: 'Task one',
-      status: 'todo',
-      completedAt: null,
-    })
-
-    await repository.deleteTask(created.id)
-
-    expect(await repository.findTaskById(created.id)).toBeNull()
   })
 
-  it('writes camelCase inputs as snake_case database fields', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations' })
-    const task = await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-421',
-      jiraKey: 'OPS-421',
-      summary: 'Order status API',
-      status: 'todo',
-      completedAt: null,
+  it('writes work-log camelCase input as snake_case fields', async () => {
+    const query = createQuery({
+      data: {
+        id: 'log-1', task_id: 'task-1', worked_on: '2026-09-01', note: 'Added validation', minutes_spent: 45,
+        created_at: '2026-09-01T08:00:00.000Z', updated_at: '2026-09-01T08:00:00.000Z',
+      },
+      error: null,
     })
+    const repository = createTaskRepository({ from: vi.fn(() => query) } as never)
 
-    const log = await repository.createWorkLog(task.id, {
-      workedOn: '2026-09-01',
-      note: 'Added validation',
-      minutesSpent: 45,
-    })
+    const log = await repository.createWorkLog('task-1', { workedOn: '2026-09-01', note: 'Added validation', minutesSpent: 45 })
 
-    expect(log).toMatchObject({ taskId: task.id, minutesSpent: 45 })
+    expect(query.insert).toHaveBeenCalledWith({ task_id: 'task-1', worked_on: '2026-09-01', note: 'Added validation', minutes_spent: 45 })
+    expect(log).toMatchObject({ taskId: 'task-1', minutesSpent: 45 })
   })
 
-  it('loads one day of work logs with task and project context in one query', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
-    const task = await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-421',
-      jiraKey: 'OPS-421',
-      summary: 'Order status API',
-      status: 'in_progress',
-      completedAt: null,
+  it('loads one day of activity with task and project context', async () => {
+    const query = createQuery({
+      data: [{
+        id: 'log-1', task_id: taskRow().id, worked_on: '2026-09-01', note: 'Added validation', minutes_spent: 45,
+        created_at: '2026-09-01T09:00:00.000Z', updated_at: '2026-09-01T09:00:00.000Z', task: taskRow(),
+      }],
+      error: null,
+      count: 1,
     })
-    await repository.createWorkLog(task.id, {
-      workedOn: '2026-09-01',
-      note: 'Added validation',
-      minutesSpent: 45,
-    })
+    const client = { from: vi.fn(() => query) }
 
-    const logs = await repository.listWorkLogsForDate({
-      workedOn: '2026-09-01',
-      projectId: project.id,
-    })
+    const logs = await createTaskRepository(client as never).listWorkLogsForDate({ workedOn: '2026-09-01', projectId: projectRow.id })
 
-    expect(logs).toEqual([expect.objectContaining({
-      taskId: task.id,
-      minutesSpent: 45,
-      task: expect.objectContaining({
-        jiraKey: 'OPS-421',
-        project: expect.objectContaining({ name: 'Operations', jiraProjectKey: 'OPS' }),
-      }),
-    })])
-    expect(logs[0]).not.toHaveProperty('task_id')
+    expect(query.select).toHaveBeenCalledWith(expect.stringContaining('task:tasks!inner'), { count: 'exact' })
+    expect(query.eq).toHaveBeenCalledWith('worked_on', '2026-09-01')
+    expect(query.eq).toHaveBeenCalledWith('task.project_id', projectRow.id)
+    expect(logs[0]).toMatchObject({ taskId: taskRow().id, task: { project: { name: 'Operations' } } })
   })
 
-  it('paginates dashboard tasks deterministically when capped rows share timestamps', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
+  it('applies inclusive date range and project filters for weekly reports', async () => {
+    const query = createQuery({ data: [], error: null, count: 0 })
+    const repository = createTaskRepository({ from: vi.fn(() => query) } as never)
 
-    await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-1',
-      jiraKey: 'OPS-1',
-      summary: 'OPS-1',
-      status: 'todo',
-      completedAt: null,
-    })
-    await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-2',
-      jiraKey: 'OPS-2',
-      summary: 'OPS-2',
-      status: 'todo',
-      completedAt: null,
-    })
+    await repository.listWorkLogsForRange({ from: '2026-09-01', to: '2026-09-07', projectId: projectRow.id })
 
-    const tasks = await repository.listDashboardTasks({ projectId: project.id })
-
-    expect(tasks.map(item => item.jiraKey).sort()).toEqual(['OPS-1', 'OPS-2'])
+    expect(query.gte).toHaveBeenCalledWith('worked_on', '2026-09-01')
+    expect(query.lte).toHaveBeenCalledWith('worked_on', '2026-09-07')
+    expect(query.eq).toHaveBeenCalledWith('task.project_id', projectRow.id)
   })
 
-  it('reuses Jira projects by normalized Jira project key', async () => {
-    const { repository } = createRepository()
-    await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
-    const renamed = await repository.upsertProject({ name: 'Renamed Operations', jiraProjectKey: 'ops' })
+  it('paginates dashboard tasks with a deterministic tie-breaker', async () => {
+    const results = [
+      { data: [taskRow('task-1')], error: null, count: 2 },
+      { data: [taskRow('task-2')], error: null, count: 2 },
+    ]
+    const query = createQuery()
+    query.then = resolveResult => Promise.resolve(results.shift()).then(resolveResult)
+    const client = { from: vi.fn(() => query) }
 
-    expect(renamed).toMatchObject({
-      name: 'Renamed Operations',
-      jiraProjectKey: 'OPS',
-    })
+    const tasks = await createTaskRepository(client as never).listDashboardTasks({ projectId: projectRow.id })
+
+    expect(tasks.map(task => task.id)).toEqual(['task-1', 'task-2'])
+    expect(query.range).toHaveBeenNthCalledWith(1, 0, 999)
+    expect(query.range).toHaveBeenNthCalledWith(2, 1, 1000)
+    expect(query.order).toHaveBeenCalledWith('id', { ascending: false })
   })
 
-  it('reuses manual projects by case-insensitive name', async () => {
-    const { repository } = createRepository()
-    const first = await repository.upsertProject({ name: 'Operations' })
-    const second = await repository.upsertProject({ name: 'operations' })
+  it('reuses Jira projects by normalized key and updates their name', async () => {
+    const find = createQuery({ data: projectRow, error: null })
+    const update = createQuery({ data: { ...projectRow, name: 'Renamed Operations' }, error: null })
+    const client = { from: vi.fn().mockReturnValueOnce(find).mockReturnValueOnce(update) }
 
-    expect(second.id).toBe(first.id)
-    expect(second.jiraProjectKey).toBeNull()
+    const project = await createTaskRepository(client as never).upsertProject({ name: 'Renamed Operations', jiraProjectKey: 'ops' })
+
+    expect(find.eq).toHaveBeenCalledWith('jira_project_key', 'OPS')
+    expect(update.update).toHaveBeenCalledWith({ name: 'Renamed Operations' })
+    expect(project).toMatchObject({ name: 'Renamed Operations', jiraProjectKey: 'OPS' })
   })
 
-  it('lists projects and work logs across a date range', async () => {
-    const { repository } = createRepository()
-    const project = await repository.upsertProject({ name: 'Operations', jiraProjectKey: 'OPS' })
-    const task = await repository.createTask({
-      projectId: project.id,
-      jiraUrl: 'https://acme.atlassian.net/browse/OPS-1',
-      jiraKey: 'OPS-1',
-      summary: 'Task one',
-      status: 'todo',
-      completedAt: null,
-    })
+  it('links an existing manual project to a Jira project key', async () => {
+    const missingKey = createQuery({ data: null, error: null })
+    const byName = createQuery({ data: { ...projectRow, jira_project_key: null }, error: null })
+    const update = createQuery({ data: projectRow, error: null })
+    const client = { from: vi.fn().mockReturnValueOnce(missingKey).mockReturnValueOnce(byName).mockReturnValueOnce(update) }
 
-    await repository.createWorkLog(task.id, {
-      workedOn: '2026-09-01',
-      note: 'Monday work',
-      minutesSpent: 30,
-    })
-    await repository.createWorkLog(task.id, {
-      workedOn: '2026-09-03',
-      note: 'Wednesday work',
-      minutesSpent: 45,
-    })
-    await repository.createWorkLog(task.id, {
-      workedOn: '2026-08-31',
-      note: 'Previous week',
-      minutesSpent: 15,
-    })
+    const project = await createTaskRepository(client as never).upsertProject({ name: 'operations', jiraProjectKey: 'ops' })
 
-    expect(await repository.listProjects()).toEqual([expect.objectContaining({ id: project.id, name: 'Operations' })])
-    expect(await repository.findProjectById(project.id)).toMatchObject({ id: project.id })
-    expect(await repository.findProjectById('missing')).toBeNull()
-
-    const logs = await repository.listWorkLogsForRange({
-      from: '2026-09-01',
-      to: '2026-09-07',
-      projectId: project.id,
-    })
-
-    expect(logs.map(item => item.workedOn).sort()).toEqual(['2026-09-01', '2026-09-03'])
-    expect(logs.every(item => item.task.project.name === 'Operations')).toBe(true)
+    expect(byName.eq).toHaveBeenCalledWith('name', 'operations')
+    expect(update.update).toHaveBeenCalledWith({ jira_project_key: 'OPS' })
+    expect(project.jiraProjectKey).toBe('OPS')
   })
 
-  it('keeps the migration invariants in the schema', () => {
-    const migrationPath = resolve('database/init.sql')
-    const migration = readFileSync(migrationPath, 'utf8')
+  it('lists projects and finds them by id', async () => {
+    const list = createQuery({ data: [projectRow], error: null })
+    const find = createQuery({ data: projectRow, error: null })
+    const client = { from: vi.fn().mockReturnValueOnce(list).mockReturnValueOnce(find) }
+    const repository = createTaskRepository(client as never)
 
-    expect(migration).toContain('CHECK (status IN (\'todo\', \'in_progress\', \'done\'))')
-    expect(migration).toContain('completed_at IS NULL')
-    expect(migration).toContain('minutes_spent IS NULL OR minutes_spent BETWEEN 1 AND 1440')
-    expect(migration).toContain('ON DELETE CASCADE')
+    await expect(repository.listProjects()).resolves.toEqual([expect.objectContaining({ name: 'Operations' })])
+    await expect(repository.findProjectById(projectRow.id)).resolves.toMatchObject({ id: projectRow.id })
+    expect(list.order).toHaveBeenCalledWith('name', { ascending: true })
+  })
+
+  it('deletes from the task table exactly once', async () => {
+    const query = createQuery()
+    const client = { from: vi.fn(() => query) }
+    await createTaskRepository(client as never).deleteTask('task-1')
+    expect(client.from).toHaveBeenCalledTimes(1)
+    expect(query.delete).toHaveBeenCalledTimes(1)
+    expect(query.eq).toHaveBeenCalledWith('id', 'task-1')
+  })
+
+  it('keeps the PostgreSQL migration invariants', () => {
+    const migration = readFileSync(resolve('supabase/migrations/202609010001_init_daymark.sql'), 'utf8')
+    expect(migration).toContain("create type task_status as enum ('todo', 'in_progress', 'done')")
+    expect(migration).toContain('tasks_completion_consistent')
+    expect(migration).toContain('work_logs_minutes_range')
+    expect(migration).toContain('on delete cascade')
   })
 })
