@@ -41,7 +41,7 @@ The Supabase service-role key and Jira token must never be exposed through a `NU
 
 ## Prepare Supabase
 
-Apply [the initial migration](supabase/migrations/202609010001_init_daymark.sql) to the target Supabase project. You can paste it into the Supabase SQL editor, or use the Supabase CLI after linking the repository:
+Apply every SQL file in [the migrations directory](supabase/migrations) to the target Supabase project in filename order. You can use the Supabase SQL editor, or the Supabase CLI after linking the repository:
 
 ```powershell
 supabase link --project-ref YOUR_PROJECT_REF
